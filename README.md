@@ -23,7 +23,3 @@
 - For a comprehensive description of the data, please refer to the following website:  
 URL: https://biz.toyokeizai.net/en/data/service/detail/id=860
 
-- Contact information for Toyo Keizai Inc. is as follows:  
-  - Telephone: +81-3-3246-5580  
-  - Email: database@toyokeizai.co.jp
-
