@@ -1,0 +1,259 @@
+---
+title: "Descriptive statistics of the data"
+author: "Ayumu Tanaka"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    #keep_md: true
+  pdf_document:
+    toc: true
+    keep_tex: true
+---
+
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+options(tinytex.install_packages = TRUE)
+```
+
+# Load the package
+
+```{r load-package}
+library(tidyverse)
+```
+
+
+# Load the data
+```{r data}
+aff_eu <- rio::import("../Data_output/ESTaff_eu.dta")
+
+# keep years: 2010 to 2020
+aff_eu <- filter(aff_eu, year >= 2010 & year <= 2020)
+
+```
+
+# Preparation
+```{r preparation}
+
+# Sector 
+aff_eu$Sector <- aff_eu$FA_SectorClassNameAlph
+aff_eu$Sector[aff_eu$FA_SectorClassNameAlph=="Agriculture,Mining"] <- "Agriculture & Mining"
+aff_eu$Sector[aff_eu$FA_SectorClassNameAlph=="HeadQuarter"] <- "Services"
+aff_eu$Sector[aff_eu$FA_SectorClassNameAlph=="Retail"] <- "Services"
+aff_eu$Sector[aff_eu$FA_SectorClassNameAlph=="Service,Others"] <- "Services"
+aff_eu$Sector[aff_eu$FA_SectorClassNameAlph=="Wholesale"] <- "Services"
+aff_eu$Sector[aff_eu$FA_SectorClassNameAlph=="Manufacturing"] <- "Manufacturing"
+
+# make country name
+aff_eu$countryname <- countrycode::countrycode(
+  aff_eu$country,
+  origin = 'iso3c', 
+  destination = "country.name"
+)
+
+# Rename
+aff_eu$exitit <- ifelse(aff_eu$exit==1, "Exit", "Survive")
+
+
+aff_eu2 <- aff_eu[, c("exitit", "GBR", "highEU", "Sector", "Aff_size", "N_Aff_EU", "countryname", "year", "Ratio")]
+
+aff_eu2$GBR[aff_eu2$GBR==1] <- "a. UK"
+aff_eu2$GBR[aff_eu2$GBR==0] <- "b. Other EU"
+
+aff_eu2$highEU[aff_eu2$highEU==1] <- "High-income EU"
+aff_eu2$highEU[aff_eu2$highEU==0] <- "Other EU"
+
+```
+
+
+```{r}
+
+
+# Rename
+
+aff_eu2 <- aff_eu2 %>% 
+  select(`High-income EU` = highEU,
+         `Number of affiliates in EU` = N_Aff_EU,
+         `Country name` = countryname,
+         `Affiliate size` = Aff_size,
+         `Exit dummy` = exitit,
+         `Japanese ownership ratio` =  Ratio,
+         `Sector` = Sector,
+         `Year` = year,
+         `UK` = GBR
+         )
+
+```
+
+
+
+
+
+
+
+# Country list 
+
+```{r country-list2}
+
+# N of obserbation by country and highEU 
+agg <- aff_eu2 %>% 
+  group_by(`Country name`, `High-income EU`) %>% 
+  summarise(N = n())
+
+# Make subsample by High-income EU
+agg_highEU <- filter(agg, `High-income EU` == "High-income EU")
+agg_otherEU <- filter(agg, `High-income EU` == "Other EU")
+
+# Rename
+agg_highEU$`High-income EU` <- NULL
+agg_otherEU$`High-income EU` <- NULL
+
+# Rename `Country name` with `High-income EU`
+
+names(agg_highEU)[names(agg_highEU)=="Country name"] <- "High-income EU"
+names(agg_otherEU)[names(agg_otherEU)=="Country name"] <- "Other EU"
+
+names(agg_highEU)[names(agg_highEU)=="N"] <- "N1"
+names(agg_otherEU)[names(agg_otherEU)=="N"] <- "N2"
+
+# Add two observations to agg_otherEU
+dat2 <- data.frame(matrix(nrow = 2, ncol = 2))
+names(dat2) <- names(agg_otherEU)
+agg_otherEU <- rbind(agg_otherEU, dat2)
+# Replace NA with blank
+
+
+# Combine the data 
+agg2 <- cbind(agg_highEU, agg_otherEU)
+
+
+```
+
+
+# tinytable
+
+```{r tinytable}
+library(tinytable)
+
+cap <- "Country list.\\label{tab:country-list}"
+not <- "Note: This table shows the number of observations ($=$ affiliates $\times$ eight years) by the host country. The sample includes the Japanese affiliates in the EU."
+
+c1 <- tt(agg2, 
+   caption = cap, 
+   notes = not, 
+   width = 1) |> 
+ group_tt(
+   j = list("High-income EU" = 1:2, "Middle-income EU" = 3:4))
+colnames(c1) <- c("Country", "N of affiliates","Country", "N of affiliates")
+
+
+# Replace NA with blank
+c1 <-  format_tt(c1, replace = "")
+
+c1
+
+# Save as LaTex file
+c1 |> 
+  save_tt("../Tables/TableA1_countrylist.tex", overwrite = TRUE)
+
+```
+
+
+For LaTex, add the following code to the preamble:
+
+```
+\usepackage{tabularray}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\UseTblrLibrary{booktabs}
+\UseTblrLibrary{siunitx}
+\newcommand{\tinytableTabularrayUnderline}[1]{\underline{#1}}
+\newcommand{\tinytableTabularrayStrikeout}[1]{\sout{#1}}
+\NewTableCommand{\tinytableDefineColor}[3]{\definecolor{#1}{#2}{#3}}
+```
+
+- [tinytable tutorial](https://vincentarelbundock.github.io/tinytable/vignettes/tinytable_tutorial.pdf)
+
+
+# Descriptive statistics of the data
+
+```{r descriptive-statistics}
+
+# Remove "countryname"
+aff_eu2$`Country name` <- NULL
+
+
+caption <- 'Descriptive statistics. \\label{tab:desc}'
+longnote <- 'This table shows the descriptive statistics of the estimation sample. The sample includes the Japanese affiliates in the EU. The variable `Number of affiliates in EU` is the number of affiliates in the EU.The variable `Affiliate size` is the size of the affiliate. The variable `High-income EU` is a dummy variable that takes 1 if the affiliate is located in the high-income EU countries. The variable `Exit` is a dummy variable that takes 1 if the affiliate exits the host country. The variable `Sector` is the sector of the affiliate.'
+
+library(modelsummary)
+
+t2 <- datasummary_balance(~ UK,
+                    data = aff_eu2,
+                    title = caption,
+                    #output = "latex",
+                    )
+t2
+
+t2 <- datasummary_balance(~ UK,
+                    data = aff_eu2,
+                    title = caption,
+                    output = "latex",
+                    )
+
+t2
+
+# Save as Latex file
+library(kableExtra)
+
+t2 |> 
+kableExtra::footnote(general = longnote, threeparttable = TRUE) %>%
+kableExtra::save_kable("../Tables/TableA2_descriptive.tex")
+```
+
+
+
+
+# Country list: simpler method
+```{r country-list3}
+library(modelsummary)
+
+aff_eu$`Country name` <- aff_eu$countryname
+aff_eu$`High-income EU`<- aff_eu$highEU
+
+t1 <- datasummary_crosstab(`Country name` ~ `High-income EU`, 
+                     statistic =  ~ N ,
+                     title = 'Country list \\label{tab:countrylist}',
+                     data = aff_eu)
+
+
+
+t1
+
+t1 <- datasummary_crosstab(`Country name` ~ `High-income EU`, 
+                     statistic =  ~ N ,
+                     title = 'Country list \\label{tab:countrylist}',
+                     output = "latex",
+                     data = aff_eu)
+
+t1
+
+# Save as Latex file
+library(kableExtra)
+
+t1 |> 
+#kableExtra::footnote(general = longnote, threeparttable = TRUE) %>%
+kableExtra::save_kable("../Tables/TableA1_countrylist2.tex")
+
+```
+
+
+

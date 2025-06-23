@@ -1,0 +1,294 @@
+---
+title: "Number of Affiliates"
+author: "Ayumu Tanaka"
+date: "2025-06-06"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: yes
+    # keep_md: true
+#bibliography: ref.bib
+#link-citations: yes
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # do not show messages
+                      warning=FALSE) # do not show warnings
+
+```
+
+# Load the package
+
+```{r load-package}
+library(ggplot2)
+library(dplyr)
+```
+
+# Load the data
+
+```{r load-data-package}
+library(rio)
+N_Aff_EU_high <- import("../Data_output/N_Aff_EU_high.rds")
+N_Aff_EU <- import("../Data_output/N_Aff_EU.rds")
+N_Aff_DEU = import("../Data_output/N_Aff_DEU.rds")
+aff_EU_high <- import("../Data_output/aff_EU_high.rds")
+
+```
+
+
+# Plot the N and WN by year 
+
+```{r Fig1a-N-WN, dpi = 300}
+
+# Create label of country
+N_Aff_DEU$Host <- ifelse(N_Aff_DEU$country == "DEU", "Germany", "UK")
+
+# Plot the N and WN by year if country == DEU and country == GBR. Log scale.
+fig1 <- ggplot(N_Aff_DEU, 
+               aes(x = year, y = N, color = Host)) +
+  geom_line() +
+  geom_line(aes(y = WN), linetype = "dashed") +
+  scale_y_log10() +
+  labs(title = "",
+       x = "Year",
+       y = "Number of Affiliates") +
+  theme_minimal() +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  theme(legend.position = "top") +
+  labs(caption = "Solid line: Number of affiliates.
+Dashed line: Number of affiliates weighted by ownership ratio.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2016, y = 430, label = "Brexit referendum") +
+   scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+fig1
+
+# save figure as EPS file
+ggsave(fig1, file="../EPS/Fig1a-N-WN.eps", dpi = 300)
+
+
+```
+
+
+# Plot the mean Ratio by country over year with confidence interval
+
+```{r fig-mean-ratio, dpi = 300}
+# Create Group as string of GBR
+aff_EU_high$Group <- ifelse(aff_EU_high$GBR==0, "High income EU", "UK")
+
+library(ggplot2)
+
+# Plot the mean Ratio by country over year with confidence interval
+ratio1 <- ggplot(aff_EU_high, 
+                 aes(x = year, y = Ratio, color = Group)) +
+  geom_point(stat = "summary", fun = "mean") +
+  geom_line(stat = "summary", fun = "mean") +
+  geom_ribbon(stat = "summary", 
+              fun.data = "mean_cl_normal", 
+              fill = "grey", alpha = 0.1, linetype = "dashed") +
+  labs(title = "Average ownership ratio",
+       x = "Year",
+       y = "Ownership ratio") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  labs(caption = "Solid line: Average ownership ratio.
+Shaded area: 95% confidence interval.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) + 
+  # Add vertical line at 2016
+  geom_vline(xintercept = 2016, linetype = "dotted") +
+  # Add text "Brexit referendum"
+  annotate("text", x = 2016, y = 0.95, label = "Brexit referendum") +
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+
+ratio1
+
+ggsave(ratio1, file="../EPS/FigX2-mean-ratio.png", dpi = 300)
+```
+
+# Plot the Number of affiliates over year : GBR versus High-income EU
+
+```{r Fig1b-N-EU-GBR, dpi = 300}
+
+library(ggplot2)
+
+# Create label of country
+N_Aff_EU_high$Host <- ifelse(N_Aff_EU_high$GBR == 0, "High-income EU", "UK")
+
+# Normalize N and WN by the 2010 value
+N_Aff_EU_high$N2 <- N_Aff_EU_high$N / N_Aff_EU_high$N[N_Aff_EU_high$year == 2010]
+N_Aff_EU_high$WN2 <- N_Aff_EU_high$WN / N_Aff_EU_high$WN[N_Aff_EU_high$year == 2010]
+
+# Plot the N and WN by year.  Log scale.
+fig1b <- ggplot(N_Aff_EU_high, 
+               aes(x = year, y = N2, color = Host)) +
+  geom_line() +
+  geom_line(aes(y = WN2), linetype = "dashed") +
+  scale_y_log10() +
+  labs(title = "",
+       x = "Year",
+       y = "Number of Affiliates") +
+  theme_minimal() +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  theme(legend.position = "top") +
+  labs(caption = "Solid line: Number of affiliates. 2010 = 1.
+Dashed line: Number of affiliates weighted by ownership ratio. 2010 = 1.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2016, y = 1.025, label = "Brexit referendum") +
+     scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+fig1b
+
+# save figure as EPS file
+ggsave(fig1b, file="../EPS/Fig1b-N-EU-GBR.eps", dpi = 300)
+
+
+```
+
+
+
+
+
+# Plot the mean Ratio: GBR versus DEU
+
+
+```{r fig-mean-ratio-deu, dpi = 300}
+
+# Remove countries other than GBR and DEU
+aff_EU_high2 <- subset(aff_EU_high, aff_EU_high$country %in% c("DEU", "GBR"))
+
+# Create Group as string of GBR
+aff_EU_high2$Group <- ifelse(aff_EU_high2$GBR==0, "Germany", "UK")
+
+
+library(ggplot2)
+
+# Plot the mean Ratio by country over year with confidence interval
+ratio2 <- ggplot(aff_EU_high2, 
+                 aes(x = year, y = Ratio, color = Group)) +
+  geom_point(stat = "summary", fun = "mean") +
+  geom_line(stat = "summary", fun = "mean") +
+  geom_ribbon(stat = "summary", 
+              fun.data = "mean_cl_normal", 
+              fill = "grey", alpha = 0.1, linetype = "dashed") +
+  labs(title = "Average ownership ratio",
+       x = "Year",
+       y = "Ownership ratio") +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  labs(caption = "Solid line: Average ownership ratio.
+Shaded area: 95% confidence interval.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) + 
+  # Add vertical line at 2016
+  geom_vline(xintercept = 2016, linetype = "dotted") +
+  # Add text "Brexit referendum"
+  annotate("text", x = 2016, y = 0.95, label = "Brexit referendum") +
+     scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+
+ratio2
+```
+
+
+
+# Appendix
+
+## Plot the N and WN of N_Aff_EU data
+
+```
+
+N_Aff_EU2 <- N_Aff_EU
+# Create Host = "EU countries" if GBR==0 and "UK" if GBR==1
+N_Aff_EU2$Host <- ifelse(N_Aff_EU$GBR==0, "EU average", "GBR")
+# Dividing N & WN by ncountry
+N_Aff_EU2$N <- N_Aff_EU2$N / N_Aff_EU2$ncountry
+N_Aff_EU2$WN <- N_Aff_EU2$WN / N_Aff_EU2$ncountry
+
+# Delete GBR
+N_Aff_EU2$GBR <- NULL
+# Delete ncountry
+N_Aff_EU2$ncountry <- NULL
+
+# Make the subsample of DEU
+#N_Aff_DEU <- subset(N_Aff, N_Aff$country == "DEU")
+# Rename "country" to "Host"
+names(N_Aff_DEU)[names(N_Aff_DEU)=="country"] = "Host"
+# Delete EU
+N_Aff_DEU$EU <- NULL
+
+# Combine the N_Aff_EU and N_Aff_DEU
+N_Aff_EU2 <- rbind(N_Aff_EU2, N_Aff_DEU)
+
+
+# Plot the N and WN by year. Log scale.
+fig2 <- ggplot(N_Aff_EU2, aes(x = year, y = N, color = Host)) +
+  geom_line() +
+  geom_line(aes(y = WN), linetype = "dashed") +
+#  scale_y_log10() +
+  labs(title = "",
+       x = "Year",
+       y = "Number of Affiliates") +
+  theme_minimal() +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  theme(legend.position = "right") +
+  labs(caption = "Solid line: Number of affiliates.
+Dashed line: Number of affiliates weighted by ownership ratio.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2016, y = 200, label = "Brexit referendum") +
+     scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+fig2
+
+
+```
+
+
+## Plot the N and WN of N_Aff_EU data
+
+```
+
+# Create Host = "EU countries" if GBR==0 and "UK" if GBR==1
+N_Aff_EU$Host <- ifelse(N_Aff_EU$GBR==0, "EU", "GBR")
+
+
+# Delete GBR
+N_Aff_EU$GBR <- NULL
+# Delete ncountry
+N_Aff_EU$ncountry <- NULL
+
+# Rename "country" to "Host"
+names(N_Aff_DEU)[names(N_Aff_DEU)=="country"] = "Host"
+# Delete EU
+N_Aff_DEU$EU <- NULL
+
+# Combine the N_Aff_EU and N_Aff_DEU
+N_Aff_EU <- rbind(N_Aff_EU, N_Aff_DEU)
+
+
+# Plot the N and WN by year. Log scale.
+fig3 <- ggplot(N_Aff_EU, aes(x = year, y = N, color = Host)) +
+  geom_line() +
+  geom_line(aes(y = WN), linetype = "dashed") +
+  scale_y_log10() +
+  labs(title = "",
+       x = "Year",
+       y = "Number of Affiliates") +
+  theme_minimal() +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  theme(legend.position = "right") +
+  labs(caption = "Solid line: Number of affiliates.
+Dashed line: Number of affiliates weighted by ownership ratio.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2016, y = 200, label = "Brexit referendum") +
+     scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+fig3
+
+```
+
+
+
+```

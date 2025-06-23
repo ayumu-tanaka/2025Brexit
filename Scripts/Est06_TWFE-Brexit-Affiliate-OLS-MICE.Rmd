@@ -1,0 +1,447 @@
+---
+title: "ETWFE-Brexit: Affiliate-Level OLS with covariates-Multiple imputation"
+author: "Ayumu Tanaka"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+  #  keep_md: true
+  pdf_document:
+    toc: true
+    keep_tex: true
+---
+
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+# Load the package
+
+```{r load-package}
+library(tidyverse)
+```
+
+
+# Load the data
+```{r data}
+
+aff_highEU <- rio::import("../Data_output/ESTaff_highEU.dta")
+
+
+# Keep years: 2010 to 2020
+aff_highEU <- aff_highEU %>% filter(year >= 2010 & year <= 2020)
+
+```
+
+
+
+# Check the Missing values
+
+```{r check-missing}
+library(mice)
+# Check the missing values of Aff_size and N_Aff_EU
+mice::md.pattern(aff_highEU[, c("AffiliateCode", "year", 
+                                "exitit", "Aff_size", "Aff_size_raw")])
+
+
+```
+
+
+# Predictor matrix
+
+```{r}
+
+# Keep the necessary variables
+aff_highEU <- aff_highEU %>%
+  select(AffiliateCode, year, exitit, Aff_size, Aff_size_raw, 
+         GBR, Brexit, country, first_year,
+         ParentJPNumber, Ratio, N_Aff_EU, survival_years)
+```
+
+
+```{r predictor-matrix}
+# Initialize the predictor matrix
+data <- aff_highEU
+init <- mice(data, maxit=0)
+pred <- init$predictorMatrix
+
+# Aff_size_raw's predictor matrix
+# 1: use、0: not-use
+pred["Aff_size_raw", ] <- 0  # Initialize all to 0
+pred["Aff_size_raw", c("ParentJPNumber", "Ratio", "N_Aff_EU","survival_years")] <- 1
+
+
+# Exclude the variables that are not used in the imputation
+pred[, c("AffiliateCode", "year", 
+         "exitit", 
+         "country", "Aff_size",  "GBR", 
+         "Brexit", "first_year")] <- 0
+
+```
+
+
+# Imputation methods
+
+```{r imputation-methods}
+# Initialize the imputation methods
+meth <- init$method
+# All to "". No imputation
+meth <- gsub("pmm", "", meth) 
+# Aff_size_raw: predictive mean matching (PMM)
+meth["Aff_size_raw"] <- "pmm"  # continuous variables
+
+```
+
+
+# Multiple Imputation
+
+```{r multiple-imputation, include=FALSE}
+# Multiple Imputation
+imp <- mice::mice(data, m=5, 
+                  method=meth, 
+                  predictorMatrix=pred, 
+                  maxit=50, 
+                  seed=500)
+# Results
+summary(imp) 
+```
+
+
+# Save the imputed data
+```{r save-imputed-data}
+complete_data <- complete(imp, action="long") 
+rio::export(complete_data, "../Data_output/complete_data.rds")
+complete1 <- complete(imp, 1)
+complete2 <- complete(imp, 2)
+complete3 <- complete(imp, 3)
+complete4 <- complete(imp, 4)
+complete5 <- complete(imp, 5)
+rio::export(complete1, "../Data_output/complete1.rds")
+rio::export(complete2, "../Data_output/complete2.rds")
+rio::export(complete3, "../Data_output/complete3.rds")
+rio::export(complete4, "../Data_output/complete4.rds")
+rio::export(complete5, "../Data_output/complete5.rds")
+
+
+```
+
+
+# Distributions of imputed data
+
+```{r distributions}
+stripplot(imp, Aff_size_raw ~ .imp, 
+          main = "Strip plot of imputed data")
+
+```
+
+
+
+# density plot
+```{r density}
+densityplot(imp, ~ Aff_size_raw, 
+            main = "Density plot of imputed data")
+
+# X range: 0 to 5000
+# Y range: 0 to 0.005
+densityplot(imp, ~ Aff_size_raw, 
+            main = "Density plot of imputed data",
+            xlim = c(0, 5000), ylim = c(0, 0.005))
+
+```
+
+
+# Convergence plot
+```{r convergence}
+# Convergence plot
+plot(imp)
+```
+
+# Compare the imputed data
+
+```{r ETWFE-Exit-OLS-HighEU-Imputed, dpi = 300}
+
+# Packages
+library(etwfe)
+library(fixest)
+library(dplyr)
+
+# Remove NA (48）
+complete1 <- complete1 %>% filter(!is.na(Aff_size_raw))
+complete2 <- complete2 %>% filter(!is.na(Aff_size_raw))
+complete3 <- complete3 %>% filter(!is.na(Aff_size_raw))
+complete4 <- complete4 %>% filter(!is.na(Aff_size_raw))
+complete5 <- complete5 %>% filter(!is.na(Aff_size_raw))
+
+
+# List of imputed data
+complete_list <- list(complete1, complete2, complete3, complete4, complete5)
+```
+
+
+# Marginal Effects
+
+- Function `etwfe()` is used to estimate the event-time weighted fixed effects model.
+- Function `emfx()` is used to calculate marginal effects.
+- `function(data_i)` is used to loop through the imputed data. 
+  - `i` is the index of the imputed data.
+- `ivar` is the independent variable.
+- `lapply()` is used to apply the function to each element of the list `complete_list`.
+
+```{r marginal-effects}
+me_fits <- lapply(complete_list, function(data_i) {
+  # etwfe: event-time weighted fixed effects
+  fit_i <- etwfe(
+    exitit ~ Aff_size_raw + N_Aff_EU,
+    tvar = year,
+    gvar = first_year,
+    ivar = year + AffiliateCode,
+    data = data_i, # imputed data i = 1, 2, 3, 4, 5
+    family = "gaussian",
+    vcov = ~country
+  )
+  # emfx: marginal effects
+  emfx(fit_i, type = "event")
+})
+```
+
+
+# Rubin's Rule
+
+- ` function(me)` get the marginal effects estimates and standard errors from each imputed data.
+
+
+```{r extract-marginal-effects}
+me_estimates <- lapply(me_fits, function(me) {
+  data.frame(
+    term = me$term,  # event time（e.g., -2, -1, 0, 1, 2）
+    estimate = me$estimate,
+    std.error = me$std.error
+  )
+})
+```
+
+
+ 
+
+```{r pool-marginal-effects}
+
+# ----- ステップ1: 個別データセットの推定値と標準誤差を保存 -----
+
+# 個別データセットの結果を格納するデータフレームを初期化
+dataset_results <- data.frame()
+
+# データセット1の結果を追加
+dataset1_results <- data.frame(
+  term = me_estimates[[1]]$term,
+  estimate_1 = me_estimates[[1]]$estimate,
+  std.error_1 = me_estimates[[1]]$std.error
+)
+dataset_results <- dataset1_results
+
+# データセット2の結果を追加
+dataset_results$estimate_2 <- me_estimates[[2]]$estimate
+dataset_results$std.error_2 <- me_estimates[[2]]$std.error
+
+# データセット3の結果を追加
+dataset_results$estimate_3 <- me_estimates[[3]]$estimate
+dataset_results$std.error_3 <- me_estimates[[3]]$std.error
+
+# データセット4の結果を追加
+dataset_results$estimate_4 <- me_estimates[[4]]$estimate
+dataset_results$std.error_4 <- me_estimates[[4]]$std.error
+
+# データセット5の結果を追加
+dataset_results$estimate_5 <- me_estimates[[5]]$estimate
+dataset_results$std.error_5 <- me_estimates[[5]]$std.error
+
+# 結果を保存
+output_dir <- "../Data_output"
+if(!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+write.csv(dataset_results, file.path(output_dir, "individual_dataset_results.csv"), row.names = FALSE)
+
+# ----- ステップ2: 保存したCSVを読み込み、Rubinのルールに基づいて統合 -----
+
+# CSVを読み込む
+individual_results <- read.csv(file.path(output_dir, "individual_dataset_results.csv"))
+
+# 統合結果を格納するデータフレームを初期化
+pooled_results <- data.frame(term = individual_results$term)
+
+# データセット数
+m <- 5
+
+# 各termに対して統合された推定値を計算
+# 推定値の平均を計算
+pooled_results$estimate <- (individual_results$estimate_1 + 
+                            individual_results$estimate_2 + 
+                            individual_results$estimate_3 + 
+                            individual_results$estimate_4 + 
+                            individual_results$estimate_5) / m
+
+# データセット内分散の計算（標準誤差の二乗の平均）
+within_var <- (individual_results$std.error_1^2 + 
+               individual_results$std.error_2^2 + 
+               individual_results$std.error_3^2 + 
+               individual_results$std.error_4^2 + 
+               individual_results$std.error_5^2) / m
+
+# データセット間分散の計算
+between_var_sum <- (individual_results$estimate_1 - pooled_results$estimate)^2 + 
+                   (individual_results$estimate_2 - pooled_results$estimate)^2 + 
+                   (individual_results$estimate_3 - pooled_results$estimate)^2 + 
+                   (individual_results$estimate_4 - pooled_results$estimate)^2 + 
+                   (individual_results$estimate_5 - pooled_results$estimate)^2
+between_var <- between_var_sum / (m - 1)
+
+# 全体の分散（Rubinのルール）
+total_var <- within_var + between_var + between_var/m
+
+# 標準誤差の計算
+pooled_results$std.error <- sqrt(total_var)
+
+# 自由度の計算
+pooled_results$df <- (m - 1) * (1 + (m * within_var) / ((m + 1) * between_var))^2
+
+# t統計量の計算
+pooled_results$t_stat <- pooled_results$estimate / pooled_results$std.error
+
+# p値の計算
+pooled_results$p_value <- 2 * pt(-abs(pooled_results$t_stat), pooled_results$df)
+
+# 信頼区間の計算
+pooled_results$conf.low <- pooled_results$estimate - qt(0.975, pooled_results$df) * pooled_results$std.error
+pooled_results$conf.high <- pooled_results$estimate + qt(0.975, pooled_results$df) * pooled_results$std.error
+
+
+# delete df
+pooled_results$df <- NULL
+
+# year
+pooled_results$year <- c(2016, 2017, 2018, 2019, 2020)
+
+# 最終結果を表示
+print(pooled_results)
+
+# 統合結果をCSVに保存
+write.csv(pooled_results, file.path(output_dir, "pooled_marginal_effects.csv"), row.names = FALSE)
+
+# 保存が完了したことを表示
+cat("The integrated data based on Rubin's rule", file.path(output_dir, "pooled_marginal_effects.csv"), "was saved.\n")
+
+```
+
+
+# Data with Imputation with Mean 
+
+- The data whose missing values are imputed by country-year average.
+
+
+```{r ETWFE-Exit-OLS-HighEU, dpi = 300}
+# Load the data
+aff_highEU <- rio::import("../Data_output/ESTaff_highEU.dta")
+
+# Keep years: 2010 to 2020
+aff_highEU <- aff_highEU %>% filter(year >= 2010 & year <= 2020)
+
+# Remove NA values from Aff_size_raw for non-imputed analysis
+aff_highEU_clean <- aff_highEU %>% filter(!is.na(Aff_size_raw))
+
+cat("Running event-time weighted fixed effects model with non-imputed data...\n")
+
+# Run the event-time weighted fixed effects model with non-imputed data
+non_imputed_fit <- etwfe(
+  exitit ~ Aff_size_raw + N_Aff_EU,
+  tvar = year,
+  gvar = first_year,
+  ivar = year + AffiliateCode,
+  data = aff_highEU_clean,
+  family = "gaussian",
+  vcov = ~country
+)
+
+# Calculate marginal effects
+non_imputed_me <- emfx(non_imputed_fit, type = "event")
+
+# Create data frame with the results
+non_imputed_results <- data.frame(
+  term = non_imputed_me$term,
+  estimate = non_imputed_me$estimate,
+  std.error = non_imputed_me$std.error,
+  t_stat = non_imputed_me$statistic,
+  p_value = non_imputed_me$p.value,
+  conf.low = non_imputed_me$conf.low,
+  conf.high = non_imputed_me$conf.high
+)
+
+# Add year column based on term values (assuming the same mapping as in the imputed analysis)
+non_imputed_results$year <- c(2016, 2017, 2018, 2019, 2020)
+
+# Save the results
+write.csv(non_imputed_results, "../Data_output/non_imputed_marginal_effects.csv", row.names = FALSE)
+
+cat("Non-imputed analysis results saved to ../Data_output/non_imputed_marginal_effects.csv\n")
+```
+
+# Create Combined Plot
+
+
+```{r combined-plot, dpi = 300}
+# Add a data source column to both datasets for identification in the plot
+pooled_results$source <- "Multiple Imputation"
+non_imputed_results$source <- "Imputation with Mean"
+
+# Combine the datasets
+combined_results <- rbind(pooled_results, non_imputed_results)
+
+# Create the combined plot
+p_combined <- ggplot(combined_results, aes(x = year, y = estimate, color = source, shape = source, linetype = source)) +
+  # Lines for both data sources
+  geom_line(position = position_dodge(width = 0.3)) +
+  # Points for both data sources
+  geom_point(size = 3, position = position_dodge(width = 0.3)) +
+  # Confidence intervals for both data sources
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), 
+                width = 0.2, 
+                position = position_dodge(width = 0.3)) +
+  # Zero effect line
+  geom_hline(yintercept = 0, linetype = "dashed", color = "darkgray") +
+  # Labels
+  labs(
+    x = "Years post treatment",
+    y = "Effect of Brexit",
+    title = "The impacts on the exit probability: multiple imputation vs. imputation with mean",
+    color = "Data Source",
+    shape = "Data Source",
+    linetype = "Data Source"
+  ) +
+  # Theme customization
+  theme_minimal() +
+  # Color and linetype customization
+  scale_color_manual(values = c("Multiple Imputation" = "blue", "Imputation with Mean" = "red")) +
+  scale_linetype_manual(values = c("Multiple Imputation" = "dotted", "Imputation with Mean" = "solid")) +
+  # X-axis breaks
+  scale_x_continuous(breaks = unique(combined_results$year))
+
+# Print the combined plot
+print(p_combined)
+
+# Save the combined plot
+ggsave("../EPS/Fig5-Imputation.png", p_combined, width = 10, height = 6, dpi = 300)
+
+
+# Save the combined plot as EPS
+library(Cairo)  
+ggsave("../EPS/Fig5-Imputation.eps", p_combined, device = cairo_ps, width = 10, height = 6, dpi = 300)
+
+```
+
+

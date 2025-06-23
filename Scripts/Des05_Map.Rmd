@@ -1,0 +1,284 @@
+---
+title: "Map of Brexit"
+author: "Ayumu Tanaka"
+date: "2024-06-22"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    #keep_md: true
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+
+# World map
+
+- `ne_countries()': Get natural earth world country polygons
+- `geom_sf()': Plot the world map
+
+
+```{r}
+library("ggplot2")
+library("sf")
+library("rnaturalearth")
+library("rnaturalearthdata")
+
+# Get natural earth world country polygons with `ne_countries()' function
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Replacing su_a3
+world$su_a3[world$name=="Portugal"] <- "PRT"
+
+# Subset the data
+world2 <- world[,c("su_a3", "name", "name_ja", "continent", "label_x", "label_y", "geometry")]
+# Set the theme to `theme_bw()'
+theme_set(theme_bw())
+# Plot the world map with `geom_sf()' function and `ggplot()'
+ggplot(data = world2) + geom_sf()
+
+```
+
+# Affiliate-level
+## Data on Number of Japanese affiliatess in countries
+
+```{r}
+# Load the data
+library(rio)
+N_Aff <- rio::import("../Data_output/N_Aff.rds")
+
+# Include Swiss as Europe
+N_Aff$EU[N_Aff$country=="CHE"] <- 1
+
+# Subset of EU==1
+N_Aff_Europe <- subset(N_Aff, EU==1)
+
+# Data of 2010
+N_Aff_Europe_2010 <- subset(N_Aff_Europe, year==2010)
+
+# Combine the data with the world map
+world_merged2010 <- merge(world2, N_Aff_Europe_2010, by.x = "su_a3", by.y = "country")
+
+# Data of 2014
+N_Aff_Europe_2014 <- subset(N_Aff_Europe, year==2014)
+
+# Combine the data with the world map
+world_merged2014 <- merge(world2, N_Aff_Europe_2014, by.x = "su_a3", by.y = "country")
+
+
+# Data of 2020
+N_Aff_Europe_2020 <- subset(N_Aff_Europe, year==2020)
+
+# Combine the data with the world map
+world_merged2020 <- merge(world2, N_Aff_Europe_2020, by.x = "su_a3", by.y = "country")
+
+```
+
+## Map of the Number of Japanese affiliates in Europe
+
+
+- for the label, `geom_sf_text()` and `geom_sf_label()` are available. 
+- The `geom_sf_label()` present the labels with white backgroud.
+- The `geom_sf_text()` present the labels without background.
+- The official document is [here](https://yutannihilation.github.io/ggsflabel/reference/geom_sf_label.html#details).
+- The useful guide is [here](https://thegraphcourses.org/wp-content/uploads/2022/01/02_choropleth_maps_working_with_coordinates_labels_segments_and_points.html) and [here](https://yutani.rbind.io/post/geom-sf-text-and-geom-sf-label-are-coming/).
+
+### 2010 with `geom_sf_text()`
+
+- `theme(axis.text = element_blank(), axis.title = element_blank())` suppress the longitude and latitude.
+
+```{r fig-map-aff-2010, dpi = 300}
+
+# Plot the map of the number of Japanese affiliates in Europe
+
+ggp2010 <-ggplot(data = world_merged2010) +
+    geom_sf(aes(fill = N), alpha = 0.4) +
+    scale_fill_distiller(name="N", palette = "Greens", direction=1, guide = NULL)+
+  labs(title="N. of  affiliates in 2010",caption="") +
+  coord_sf(xlim = c(-11, 32), ylim = c(70, 35), expand = TRUE)+
+   theme(axis.text = element_blank(), axis.title = element_blank()) +
+      geom_sf_text(
+               aes(label = N), size = 2, color = "black", fontface = "bold",
+               position = "dodge")  # label
+
+ggp2010
+
+```
+
+
+
+
+
+
+### 2014
+
+- `guide = NULL`: suppress the legend.
+
+```{r fig-map-aff-2014, dpi = 300}
+
+ggp2014 <-ggplot(data = world_merged2014) +
+    geom_sf(aes(fill = N), alpha = 0.4) +
+    scale_fill_distiller(name="N", palette = "Greens", direction=1, guide = NULL)+
+  labs(title="N. of  affiliates in 2014",caption="") +
+  coord_sf(xlim = c(-11, 32), ylim = c(70, 35), expand = TRUE)+
+   theme(axis.text = element_blank(), axis.title = element_blank()) +
+      geom_sf_text(
+               aes(label = N), size = 2, color = "black", fontface = "bold",
+               position = "dodge")  # label
+
+ggp2014
+
+```
+
+### 2020
+
+```{r fig-map-aff-2020, dpi = 300}
+
+ggp2020 <-ggplot(data = world_merged2020) +
+    geom_sf(aes(fill = N), alpha = 0.4) +
+    scale_fill_distiller(name="N", palette = "Greens", direction=1, guide = NULL)+
+  labs(title="N. of  affiliates in 2020",caption="") +
+  coord_sf(xlim = c(-11, 32), ylim = c(70, 35), expand = TRUE)+
+   theme(axis.text = element_blank(), axis.title = element_blank()) +
+      geom_sf_text(
+               aes(label = N), size = 2, color = "black", fontface = "bold",
+               position = "dodge")  # label
+
+ggp2020
+
+
+```
+
+## Compare the maps of 2010 and 2020
+
+```{r fig-map-aff-2010-2020, dpi = 300}
+#install.packages("gridExtra")               # Install gridExtra package
+library("gridExtra")                        # Load gridExtra package
+combined <- grid.arrange(ggp2010, ggp2020, nrow = 1)          # Apply grid.arrange function
+
+library(ggplot2)
+ggsave("../EPS/FigA1-map-aff-2010-2020.pdf", plot = combined, width = 10, height = 6, dpi = 300)
+```
+
+## Compare the maps of 2014 and 2020
+
+```{r FigA1-map-aff-2014-2020, dpi = 300}
+#install.packages("gridExtra")               # Install gridExtra package
+library("gridExtra")                        # Load gridExtra package
+combined <- grid.arrange(ggp2014, ggp2020, nrow = 1)          # Apply grid.arrange function
+
+library(ggplot2)
+ggsave("../EPS/FigA1-map-aff-2014-2020.pdf", plot = combined, width = 10, height = 6, dpi = 300)
+```
+
+
+
+# Parent-level
+## Data on Number of Japanese parent firms in countries
+
+```{r}
+# Load the data "parent.rds"
+library(rio)
+parent <- rio::import("../Data_output/parent.rds")
+
+```
+
+
+## Collapse the parent data by iso and year
+
+```{r}
+# Collapse the data "parent" by iso and year
+library(tidyverse)
+N_Parent <- parent %>% 
+  group_by(year, iso) %>% 
+  summarise(N = n(),
+            EU = first(EU_all),
+            WN = sum(Ratio),
+            Sector = first(Parent_SectorClassNameAlph),
+            SectorClass = first(Parent_SectorClass))
+
+# Include Swiss as Europe
+N_Parent$EU[N_Parent$iso=="CHE"] <- 1
+
+# Subset of EU==1
+N_Parent_Europe <- subset(N_Parent, EU==1)
+
+```
+
+## Combine the parent data with the world map
+
+```{r}
+# Data of 2014
+N_Parentt_Europe_2014 <- subset(N_Parent_Europe, year==2014)
+
+
+# Combine the data with the world map
+world_merged_parent2014 <- merge(world2, N_Parentt_Europe_2014, 
+                                 by.x = "su_a3", by.y = "iso")
+
+# Data of 2020
+N_Parentt_Europe_2020 <- subset(N_Parent_Europe, year==2020)
+
+# Combine the data with the world map
+world_merged_parent2020 <- merge(world2, N_Parentt_Europe_2020, 
+                                 by.x = "su_a3", by.y = "iso")
+
+```
+
+
+## Map of the Number of Japanese parent firms in Europe
+
+### 2014
+
+```{r fig-map-parent-2014, dpi = 300}
+pmap2014 <- ggplot(data = world_merged_parent2014) +
+    geom_sf(aes(fill = N), alpha = 0.4) +
+    scale_fill_distiller(name="N", palette = "Greens", direction=1, guide = NULL)+
+  labs(title="N. of firms in 2014",caption="") +
+  coord_sf(xlim = c(-11, 32), ylim = c(70, 35), expand = TRUE)+
+   theme(axis.text = element_blank(), axis.title = element_blank()) +
+      geom_sf_text(
+               aes(label = N), size = 2, color = "black", fontface = "bold",
+               position = "dodge")  # label
+
+pmap2014
+```
+### 2020
+
+```{r fig-map-parent-2020, dpi = 300}
+pmap2020 <- ggplot(data = world_merged_parent2020) +
+    geom_sf(aes(fill = N), alpha = 0.4) +
+    scale_fill_distiller(name="N", palette = "Greens", direction=1, guide = NULL)+
+  labs(title="N. of firms in 2020",caption="") +
+  coord_sf(xlim = c(-11, 32), ylim = c(70, 35), expand = TRUE)+
+   theme(axis.text = element_blank(), axis.title = element_blank()) +
+      geom_sf_text(
+               aes(label = N), size = 2, color = "black", fontface = "bold",
+               position = "dodge")  # label
+
+pmap2020
+```
+## Compare the maps of 2014 and 2020
+
+```{r fig-map-parent-2014-2020, dpi = 300}
+#install.packages("gridExtra")               # Install gridExtra package
+library("gridExtra")                        # Load gridExtra package
+grid.arrange(pmap2014, pmap2020, nrow = 1)          # Apply grid.arrange function
+```
+
+# Combine 4 maps
+
+```{r fig-map-all, dpi = 300}
+#install.packages("gridExtra")               # Install gridExtra package
+library("gridExtra")                        # Load gridExtra package
+grid.arrange(ggp2014, ggp2020, pmap2014, pmap2020, nrow = 2)          # Apply grid.arrange function
+```
+
+

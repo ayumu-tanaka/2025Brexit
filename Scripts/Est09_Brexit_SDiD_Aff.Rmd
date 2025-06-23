@@ -1,0 +1,175 @@
+---
+title: "Brexit: SDiD, Affiliate-level"
+author: "Ayumu Tanaka"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    #keep_md: true
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+
+```{r packages}
+# devtools::install_github("synth-inference/synthdid")
+library(synthdid)
+library(ggplot2)
+
+set.seed(12345)
+```
+
+# Load the data
+
+```{r data}
+library(rio)
+aff_highEU <- rio::import("../Data_output/ESTaff_highEU.dta")
+
+# Keep years: 2010-2020
+aff_highEU <- aff_highEU[aff_highEU$year >= 2010 & aff_highEU$year <= 2020, ]
+
+```
+
+
+
+```{r prepare}
+
+aff_highEUb <- aff_highEU[, c("AffiliateCode", "country", "year", 
+                              "exitit", "Brexit")]
+# Rename "Brexit" to "treated" using names function
+names(aff_highEUb)[names(aff_highEUb)=="Brexit"] = "treated"
+
+table(aff_highEUb$year, aff_highEUb$treated)
+
+# Convert to data frame
+aff_highEUb <- as.data.frame(aff_highEUb)
+
+# Arrange the data: country,  year, outcome, treated
+aff_highEUb <- aff_highEUb[, c("AffiliateCode", "year", "exitit", "treated")]
+
+```
+
+# Set up the data for the synthetic DiD
+
+- `sprintf` is a wrapper for the C function sprintf, that returns a character vector containing a formatted combination of text and variable values.
+
+```{r sdid, message=FALSE,  warning=FALSE}
+
+# panel.matrices to reshape the long data to wide data
+setup = synthdid::panel.matrices(aff_highEUb, unit =1, time = 2, outcome = 3, treatment =4)
+# synthdid_estimate to estimate the SDiD estimates
+## Y: matrix of observed values
+## N0: number of control group
+## T0: number of pretreatment periods
+aff_highEUb.tau.hat = synthdid::synthdid_estimate(setup$Y, setup$N0, setup$T0)
+aff_highEUb.tau.hat
+print(summary(aff_highEUb.tau.hat))
+
+# vcov: Compute the variance-covariance matrix of Fitted Model Object
+se = sqrt(vcov(aff_highEUb.tau.hat, method='placebo'))
+se
+# sprintf
+label1 <- sprintf('Point estimate = %1.3f', aff_highEUb.tau.hat)
+label2 <- sprintf('S.E.= %1.3f', se)
+label3 <- summary( aff_highEUb.tau.hat)$dimensions
+label4 <- sprintf('N = %1.0f', label3["N0"]+ label3["N1"])
+
+label1
+label2
+label3
+label4
+
+sprintf('95%% CI (%1.2f, %1.2f)', aff_highEUb.tau.hat 
+        - 1.96 * se, aff_highEUb.tau.hat + 1.96 * se)
+```
+
+
+# Plot the treatement effects
+- parallel trends and control units
+
+```{r Fig7-SDiD, dpi = 300}
+plot(aff_highEUb.tau.hat, se.method='placebo')
+
+# brexit.sdid1 < plot(brexit.tau.hat, se.method='placebo', scale_x_continuous(breaks=seq(2010,2020,2)))
+g1 <- plot(aff_highEUb.tau.hat, se.method='placebo')
+# Delete the unnesassary x-axis labels
+g2 <- g1 + scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) + 
+  # add labels
+  annotate("text", x = 2016, y = 0.1, label = label1, size = 3) +
+  annotate("text", x = 2016, y = 0.05, label = label2, size = 3) +
+  annotate("text", x = 2016, y = 0, label = label4, size = 3) 
+
+g2
+
+# Save the plot
+ggsave("../EPS/Fig7-SDiD.eps", dpi = 300,
+       width=8, height=6)
+ggsave("../EPS/Fig7-SDiD.png", dpi = 300,
+       width=8, height=6)
+ggsave("../EPS/Fig7-SDiD.pdf", dpi = 300,
+       width=8, height=6)
+
+```
+
+## Weight
+
+- Weight of control units, $\omega_i$
+
+
+```{r weight, fig.width=7, fig.height=4}
+synthdid_units_plot(aff_highEUb.tau.hat, se.method='placebo')
+#ggsave("brexit.control.png")
+```
+
+
+## Check the parallel trends
+
+
+```{r fig_parallel_trends, dpi = 300}
+g3 <- plot(aff_highEUb.tau.hat, overlay=1,  se.method='placebo')
+# Delete the unnecessary x-axis labels
+g4 <- g3 + scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+g4
+#ggsave("brexit.parallel_trends.png")
+```
+
+
+# DiD and SDiD
+
+```{r}
+# SC
+#aff_highEUb.tau.sc   = sc_estimate(setup$Y, setup$N0, setup$T0)
+# DiD
+aff_highEUb.tau.did  = did_estimate(setup$Y, setup$N0, setup$T0)
+# DiD, SC, SDiD。
+aff_highEUb.estimates = list(aff_highEUb.tau.did, aff_highEUb.tau.hat)
+# Name the results
+names(aff_highEUb.estimates) = c('DiD', 'SDiD')
+```
+
+
+```{r}
+# Print the results
+print(unlist(aff_highEUb.estimates))
+```
+
+
+## Plot the DiD and SDiD results
+```{r fig_sdid_did_sc, dpi = 300}
+g5 <- synthdid_plot(aff_highEUb.estimates, se.method='placebo')
+g6 <- g5 + scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+g6
+#ggsave("brexit.sdid_did_sc.png")
+```
+
+
+
+

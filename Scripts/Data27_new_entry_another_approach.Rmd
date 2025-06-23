@@ -1,0 +1,205 @@
+---
+title: "New entry: Another approach"
+author: "Ayumu Tanaka"
+date: "2024-05-29"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: yes
+    #keep_md: true
+#bibliography: ref.bib
+#link-citations: yes
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # cache results
+                      message=FALSE, # do not show messages
+                      warning=FALSE) # do not show warnings
+
+```
+
+
+# Introduction
+
+Define the first year as the year when a new affiliate appears in the data for the first time.
+
+
+# Load the package
+
+```{r load-package}
+library(ggplot2)
+library(dplyr)
+```
+
+# Load the data
+
+```{r load-data-package}
+library(rio)
+aff = rio::import("../Data_output/FA6.rds")
+
+```
+
+
+- check the years in the data
+
+```{r check-years}
+table(aff$year)
+```
+
+
+- Keep bi-annual data from 1990 to 2020
+- 2017や2019 が含まれていると、2016--2020年の期間の新規参入数が小さくなってしまうので、全期間２年ごとにデータを抽出する。
+
+```{r keep-bi-annual-data}
+# Keep bi-annual data from 1990 to 2020: 1990, 1992, 1994, 1996, 1998, 2000, 2002, 2004, 2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020
+aff = aff %>% filter(year %in% seq(1990, 2020, by = 2))
+# check the years in the data
+table(aff$year)
+```
+
+
+
+
+
+# Affiliate-level data
+## Keep the first year of the data
+
+```{r keep-first-year}
+aff_first <- aff %>% 
+  group_by(AffiliateCode) %>% 
+  filter(year == min(year)) %>% 
+  ungroup()
+```
+
+## Collapse the data by industry, iso and start year
+
+```{r collapse-data-tidyverse-sector}
+collapseIndustry <- aff_first %>% 
+  group_by(year, iso, FA_SectorCode2009) %>% 
+  summarise(N = n(), 
+            EU = first(EU_all),
+            meanratio = mean(Ratio, na.rm = TRUE),
+            WN = sum(Ratio))
+
+# Export the data
+rio::export(collapseIndustry, "../Data_output/collapse_industry.rds")
+rio::export(collapseIndustry, "../Data_output/collapse_industry.dta")
+
+```
+
+
+## Collapse the data by iso and start year
+
+```{r collapse-data-tidyverse}
+collapse <- aff_first %>% 
+  group_by(year, iso) %>% 
+  summarise(N = n(), 
+            EU = first(EU_all),
+            meanratio = mean(Ratio, na.rm = TRUE),
+            WN = sum(Ratio))
+
+# Export the data
+rio::export(collapse, "../Data_output/collapse.rds")
+rio::export(collapse, "../Data_output/collapse.dta")
+```
+
+
+
+
+## Data cleaning
+
+High-income EU countries are Luxembourg, Ireland, Denmark, Netherlands, Sweden, Austria, Germany, Finland, Belgium, France, United Kingdom, and Italy. The GDP per capita of these countries are as follows:
+
+- Luxembourg: $115,531 LUX *
+- Ireland: $84,339 IRL *
+- Denmark: $63,434 DNK *
+- Netherlands: $62,515 NLD *
+- Sweden: $59,738 SWE *
+- Austria: $57,256 AUT *
+- Germany: $55,682 DEU *
+- Finland: $55,345 FIN *
+- Belgium: $54,319 BEL*
+- France: $46,133 FRA *
+- United Kingdom: $45,470 GBR *
+- Italy: $40,594 ITA *
+
+```{r collapsed-data2}
+
+# Keep year>=2010  & year <=2020
+collapse <- subset(collapse, year >= 2010 & year <=2020)
+
+
+# Identify high-income EU countries
+EU_HI <- c("AUT", "BEL", "DNK", "FIN", "FRA", "DEU", "IRL", "ITA", "LUX", "NLD", "SWE", "GBR")
+# Create the EU dummy
+collapse$EU_HI <- ifelse(collapse$iso %in% EU_HI, 1, 0)
+# Keep the data of EU_HI
+collapse_EU_HI <- subset(collapse, EU_HI==1)
+# Create the GBR dummy
+collapse_EU_HI$GBR <- ifelse(collapse_EU_HI$iso=="GBR", 1, 0)
+# Collapse the data by year2 and GBR
+library(doBy)
+collapseNse <- doBy::summaryBy(N ~ year + GBR, FUN=c(mean,sd), 
+                               data = collapse_EU_HI)
+# Replace N.sd = 0 if GBR==1
+collapseNse$N.sd[collapseNse$GBR==1] <- 0
+# Create the Group dummy
+collapseNse$Group <- ifelse(collapseNse$GBR==1, "GBR", "High-income EU countries")
+
+```
+
+
+
+## Plot the number of firms entering the UK & other High-income EU countries
+
+```{r Fig2b_plot_enter-aff-compare, dpi = 300}
+# Plot the mean number of observation exiting by Group with 95% CI
+
+library(ggplot2)
+ggplot(data = subset(collapseNse, GBR==0), 
+                      aes(x = year, y = N.mean, 
+                          color = Group)) +
+  geom_line(linetype = "dotted") +
+  geom_point() +
+  geom_ribbon(aes(ymin = N.mean - 1.96 * N.sd, 
+                  ymax = N.mean + 1.96 * N.sd, 
+                  fill = Group), alpha = 0.2,
+              linetype = "dotted") +
+  labs(title = "Number of new affiliates",
+       x = "Year",
+       y = "Number of new affiliates") +
+  theme_minimal() +
+  geom_line(data = subset(collapseNse, GBR==1), 
+            linetype = "solid",
+            colour = "black") +
+  geom_point(data = subset(collapseNse, GBR==1),
+             colour = "black") +
+  geom_text(data = subset(collapseNse, GBR==1),
+             aes(label = N.mean),
+            nudge_y = 3.5,
+            #position = position_stack(vjust = 1.4),
+            colour =  "black") +
+  theme(legend.position = "none") +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  labs(caption = "Solid line: UK. Dotted line: High-income EU countries.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2017, y = 75, 
+           label = "Brexit referendum",
+           , colour = "blue") +
+  annotate("text", x = 2011, y = 70, 
+           label = "UK", colour = "black") + 
+  annotate("text", x = 2014, y = 0, 
+           label = "High-income EU countries",
+           colour = "red") +
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+# Save the plot as EPS
+ggsave("../EPS/Fig2b_plot_enter-aff-compare.eps", dpi = 300)
+
+```
+
+
+
+

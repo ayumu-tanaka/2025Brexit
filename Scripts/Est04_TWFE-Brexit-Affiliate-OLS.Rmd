@@ -1,0 +1,662 @@
+---
+title: "TWFE-Brexit: Affiliate-Level OLS"
+author: "Ayumu Tanaka"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    #keep_md: true
+#  pdf_document:
+#    toc: true
+#    keep_tex: true
+---
+
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+# Load the package
+
+```{r load-package}
+library(tidyverse)
+```
+
+
+# Load the data
+```{r data}
+aff_eu <- rio::import("../Data_output/ESTaff_eu.dta")
+
+aff_highEU <- rio::import("../Data_output/ESTaff_highEU.dta")
+
+aff_oecd <- rio::import("../Data_output/ESTaff_oecd.dta")
+
+aff <- rio::import("../Data_output/ESTaff.dta")
+
+
+# Keep years: 2010 to 2020
+aff_eu <- aff_eu %>% filter(year >= 2010 & year <= 2020)
+aff_highEU <- aff_highEU %>% filter(year >= 2010 & year <= 2020)
+aff_oecd <- aff_oecd %>% filter(year >= 2010 & year <= 2020)
+aff <- aff %>% filter(year >= 2010 & year <= 2020)
+
+```
+
+
+# Event study-TWFE
+## Exit-OLS with `fixest`
+
+
+```{r Fig-TWFE-Exit-OLS, dpi = 300}
+
+library(fixest)
+
+es1 <- fixest::feols(exitit ~   i(year, GBR, 2014) 
+                       | year + AffiliateCode, 
+               data = aff_highEU,
+               vcov = ~ country)
+fixest::etable(es1)
+
+es2 <- fixest::feols(exitit ~   i(year, GBR, 2014) 
+                       | year +  AffiliateCode, 
+               data = aff_eu,
+               vcov = ~ country)
+fixest::etable(es2)
+
+
+# labels
+es1_n = as.numeric(es1[["nobs"]])
+es2_n = as.numeric(es2[["nobs"]])
+legend1 <- paste("High income EU (N = ", es1_n, ")")
+legend2 <- paste("EU (N =", es2_n, ")")
+
+# coef
+b <- es1[["coefficients"]]
+# decimal to 3
+b <- round(b, 3)
+
+iplot(list(es1, es2), pt.join = TRUE,
+      main = "Effect of Brexit on exit probability",
+      sub = "Affiliate-level balanced panel",
+      xlab = "Linear probability model"
+      ) 
+legend("topleft", col = 1:2, pch = 10, cex = 0.7, lwd = 1, lty = 1:2,
+       legend = c(legend1, legend2),
+       title = "Comparison countries") 
+# Add value labels 
+ text(2010, b[1]-0.01, b[1], cex = 0.7, col = 1)
+ text(2012, b[2]-0.01, b[2], cex = 0.7, col = 1)
+ text(2016, b[3]-0.01, b[3], cex = 0.7, col = 1)
+ text(2017, b[4]-0.01, b[4], cex = 0.7, col = 1)
+ text(2018, b[5]-0.01, b[5], cex = 0.7, col = 1)
+ text(2019, b[6]-0.01, b[6], cex = 0.7, col = 1)
+ text(2020, b[7]-0.01, b[7], cex = 0.7, col = 1)
+ text(2021, b[8]-0.01, b[8], cex = 0.7, col = 1)
+
+
+```
+
+
+### High-income EU only
+
+```{r Fig3-TWFE-Exit-OLS-HighEU, dpi = 300}
+
+postscript("../EPS/Fig3-TWFE-Exit-OLS-HighEU.eps", horizontal = FALSE,
+           width = 8, height = 6)
+fixest::iplot(es1, pt.join = TRUE,
+      main = "Effect of Brexit on exit probability",
+      sub = "Affiliate-level balanced panel.",
+      xlab = "OLS. Event study."
+      ) 
+legend("topleft", col = 1:2, pch = 10, cex = 0.7, lwd = 1, lty = 1:2,
+       legend = c(legend1),
+       title = "Comparison countries") 
+# Add value labels 
+ text(2010, b[1]-0.01, b[1], cex = 0.7, col = 1)
+ text(2012, b[2]-0.01, b[2], cex = 0.7, col = 1)
+ text(2016, b[3]-0.01, b[3], cex = 0.7, col = 1)
+ text(2017, b[4]-0.01, b[4], cex = 0.7, col = 1)
+ text(2018, b[5]-0.01, b[5], cex = 0.7, col = 1)
+ text(2019, b[6]-0.01, b[6], cex = 0.7, col = 1)
+ text(2020, b[7]-0.01, b[7], cex = 0.7, col = 1)
+ text(2021, b[8]-0.01, b[8], cex = 0.7, col = 1)
+ 
+ dev.off()
+```
+
+
+## Show the png file
+
+```{r, echo=FALSE, out.width = "100%"}
+#  install.packages("magick")
+library(magick)
+
+# EPS 800 DPI
+img <- image_read(path = "../EPS/Fig3-TWFE-Exit-OLS-HighEU.eps", density = "800")
+
+# PNG
+image_write(img, path = "../EPS/Fig3-TWFE-Exit-OLS-HighEU.png", format = "png")
+
+```
+
+
+![](../EPS/Fig3-TWFE-Exit-OLS-HighEU.png){ width=100% }
+
+
+## Ownership-OLS with `fixest`
+
+
+
+```{r Fig-TWFE-Ratio-OLS, dpi = 300}
+
+
+library(fixest)
+es5 <- fixest::feols(Ratio ~   i(year, GBR, 2014) 
+                       | year + AffiliateCode, 
+               data = aff_highEU,
+               vcov = ~ country)
+fixest::etable(es5)
+
+es6 <- fixest::feols(Ratio ~   i(year, GBR, 2014) 
+                       | year + AffiliateCode, 
+               data = aff_eu,
+               vcov = ~ country)
+fixest::etable(es6)
+
+es5_n = as.numeric(es5[["nobs"]])
+es6_n = as.numeric(es6[["nobs"]])
+
+legend5 <- paste("High income EU (N = ", es5_n, ")")
+legend6 <- paste("EU (N =", es6_n, ")")
+
+# coef
+b <- es5[["coefficients"]]
+# decimal to 3
+b <- round(b, 3)
+
+iplot(list(es5, es6), pt.join = TRUE,
+      main = "Effect of Brexit on the ownership ratio",
+      sub = "Affiliate-level balanced panel",
+      xlab = "OLS"
+      )
+legend("bottomleft", col = 1:2, pch = 10, cex = 0.7, lwd = 1, lty = 1:2,
+       legend = c(legend5, legend6),
+       title = "Comparison countries")
+# Add value labels 
+text(2010, b[1]+0.01, b[1], cex = 0.7, col = 1)
+text(2012, b[2]+0.01, b[2], cex = 0.7, col = 1)
+text(2016, b[3]+0.01, b[3], cex = 0.7, col = 1)
+text(2017, b[4]+0.01, b[4], cex = 0.7, col = 1)
+text(2018, b[5]+0.01, b[5], cex = 0.7, col = 1)
+text(2019, b[6]+0.01, b[6], cex = 0.7, col = 1)
+text(2020, b[7]+0.01, b[7], cex = 0.7, col = 1)
+text(2021, b[8]+0.01, b[8], cex = 0.7, col = 1)
+
+```
+
+
+### High-income EU only
+
+```{r Fig4-TWFE-Ratio-OLS-HighEU, dpi = 300}
+
+postscript("../EPS/Fig4-TWFE-Ratio-OLS-HighEU.eps", horizontal = FALSE,
+           width = 8, height = 6)
+fixest::iplot(es5, pt.join = TRUE,
+      main = "Effect of Brexit on the ownership ratio",
+      sub = "Affiliate-level balanced panel",
+      xlab = "OLS"
+      )
+legend("bottomleft", col = 1:2, pch = 10, cex = 0.7, lwd = 1, lty = 1:2,
+       legend = c(legend5),
+       title = "Comparison countries")
+# Add value labels 
+text(2010, b[1]+0.01, b[1], cex = 0.7, col = 1)
+text(2012, b[2]+0.01, b[2], cex = 0.7, col = 1)
+text(2016, b[3]+0.01, b[3], cex = 0.7, col = 1)
+text(2017, b[4]+0.01, b[4], cex = 0.7, col = 1)
+text(2018, b[5]+0.01, b[5], cex = 0.7, col = 1)
+text(2019, b[6]+0.01, b[6], cex = 0.7, col = 1)
+text(2020, b[7]+0.01, b[7], cex = 0.7, col = 1)
+text(2021, b[8]+0.01, b[8], cex = 0.7, col = 1)
+
+dev.off()
+
+```
+
+
+
+\newpage
+
+# Event study-ETWFE
+
+## Exit-OLS with `etwfe`
+
+### High income EU
+
+```{r ETWFE-Exit-OLS-HighEU, dpi = 300}
+
+library(etwfe)
+es7ols <- etwfe::etwfe(exitit ~  1  ,
+               tvar = year, # time var
+               gvar = first_year, # group var
+               #xvar = N_Aff_EU  ,
+               ivar =  year + AffiliateCode, # FEs
+               data = aff_highEU,
+               family = "gaussian",
+               vcov = ~country)
+fixest::etable(es7ols)
+
+# Marginal effects
+es7OLS_ME = etwfe::emfx(es7ols, type = "event")
+
+
+```
+
+### EU
+
+```{r ETWFE-Exit-OLS-EU, dpi = 300}
+library(etwfe)
+es8ols <- etwfe::etwfe(exitit ~  1  ,
+               tvar = year, # time var
+               gvar = first_year, # group var
+               #xvar = N_Aff_EU  ,
+               ivar =  year + AffiliateCode, # FEs
+               data = aff_eu,
+               family = "gaussian",
+               vcov = ~country)
+fixest::etable(es8ols)
+
+# Marginal effects
+es8OLS_ME = etwfe::emfx(es8ols, type = "event")
+
+```
+
+
+
+
+
+
+
+
+## Combine the event study results with `etwfe`-OLS
+
+```{r Fig-ETWFE-Exit-OLS, dpi = 300}
+# Add group variable
+es7OLS_ME$Control <- "High income EU"
+es8OLS_ME$Control <- "EU"
+
+# Add event to +0.2 for es8me
+es8OLS_ME$event <- es8OLS_ME$event + 0.1
+
+# Combine the two data frames
+es <- rbind(es7OLS_ME, es8OLS_ME)
+
+# value label
+es$estimateLabel <- round(es$estimate,3)
+es$estimateLabel[es$Control == "EU"] <- ""
+
+# Plot the estimate and confidence intervals by group
+ggplot(es, aes(x = event, y = estimate, 
+                  ymin = conf.low, ymax = conf.high, col = Control)) +
+  geom_hline(yintercept = 0) +
+  geom_pointrange() +
+  labs(x = "Years post treatment", 
+       y = "Effect of Brexit",
+       title = "The impacts on the exit probability",
+       caption = "ETWFE model. OLS. Affiliate-level balanced panel."
+       ) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  scale_color_manual(values = c("High income EU" = "darkcyan", "EU" = "darkorange"))  +
+  # add value label
+  geom_text(aes(label = estimateLabel), 
+            vjust = -0.5, size = 3, 
+            angle = 45,
+            colour = "black",
+            show.legend = FALSE)
+
+# Reduce event by 0.1 for es8
+es8OLS_ME$event <- es8OLS_ME$event - 0.1
+
+```
+
+
+## Ownership-OLS with `etwfe`
+
+### High income EU
+
+```{r ETWFE-Ratio-OLS-highEU, dpi = 300}
+
+library(etwfe)
+es9ols <- etwfe::etwfe(Ratio ~  1  ,
+               tvar = year, # time var
+               gvar = first_year, # group var
+               #xvar = N_Aff_EU  ,
+               ivar =  year + AffiliateCode, # FEs
+               data = aff_highEU,
+               family = "gaussian",
+               vcov = ~country)
+fixest::etable(es9ols)
+
+# Marginal effects
+es9OLS_ME = etwfe::emfx(es9ols, type = "event")
+
+
+```
+
+### EU
+
+```{r ETWFE-Ratio-OLS-EU}
+library(etwfe)
+es10ols <- etwfe::etwfe(Ratio ~  1  ,
+               tvar = year, # time var
+               gvar = first_year, # group var
+               #xvar = N_Aff_EU  ,
+               ivar =  year + AffiliateCode, # FEs
+               data = aff_eu,
+               family = "gaussian",
+               vcov = ~country)
+fixest::etable(es10ols)
+
+# Marginal effects
+es10OLS_ME = etwfe::emfx(es10ols, type = "event")
+
+```
+
+
+
+
+
+## Combine the event study results with `etwfe`-OLS
+
+```{r Fig-ETWFE-Ratio-OLS}
+# Add group variable
+es9OLS_ME$Control <- "High income EU"
+es10OLS_ME$Control <- "EU"
+
+# Add event to +0.1
+es10OLS_ME$event <- es10OLS_ME$event + 0.1
+
+# Combine the two data frames
+es <- rbind(es9OLS_ME, es10OLS_ME)
+
+# value label
+es$estimateLabel <- round(es$estimate,3)
+es$estimateLabel[es$Control == "EU"] <- ""
+
+
+# Plot the estimate and confidence intervals by group
+ggplot(es, aes(x = event, y = estimate, 
+                  ymin = conf.low, ymax = conf.high, col = Control)) +
+  geom_hline(yintercept = 0) +
+  geom_pointrange() +
+  labs(x = "Years post treatment", 
+       y = "Effect of Brexit",
+       title = "The impacts on the ownership ratio",
+       caption = "ETWFE model. OLS. Affiliate-level balanced panel."
+       ) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  scale_color_manual(values = c("High income EU" = "darkcyan", "EU" = "darkorange")) +
+  # add value label
+  geom_text(aes(label = estimateLabel), 
+            vjust = -0.5, size = 3, 
+            angle = 45,
+            colour = "black",
+            show.legend = FALSE)
+
+
+# Reduce event to -0.1
+es10OLS_ME$event <- es10OLS_ME$event - 0.1
+```
+
+
+
+
+
+## Estimation tables
+
+
+
+
+```{r Table-ETWFE-OLS, dpi = 300}
+
+library(kableExtra)
+library(modelsummary)
+# To disable `siunitx` and prevent `modelsummary` from wrapping numeric entries in `\num{}`
+options("modelsummary_format_numeric_latex" = "plain")
+
+# longnote
+longnote <- "Marginal effects from Wooldridge's (2021) extended two-way fixed effects (ETWFE) model are reported in the table. Standard errors are clustered at the country level and presented in parentheses. The data are affiliate-level balanced panel data from the OJC data. The estimation uses data from 2010 to 2021, with the post-treatment period defined as 2016–2021. To improve computational efficiency, the estimation employs group-level (i.e., country-level) fixed effects instead of unit-level (i.e., affiliate-level) fixed effects. This estimation strategy follows Wooldridge (2021), which demonstrates the equivalence of group- and unit-level fixed effects in linear models. The R package `etwfe` is used for implementation."
+
+
+rename_fn = c(  ".Dtreat 0" = "UK × Year 2016", 
+                ".Dtreat 1" = "UK × Year 2017", 
+                ".Dtreat 2" = "UK × Year 2018",
+                ".Dtreat 3" = "UK × Year 2019",
+                ".Dtreat 4" = "UK × Year 2020"
+                )
+
+
+models <- list("High income EU" = es7OLS_ME, 
+               "EU" = es8OLS_ME,
+               "High income EU" = es9OLS_ME,
+               "EU" = es10OLS_ME
+               )
+
+
+library(tibble)
+
+rows <- tribble(~term,          ~"(1)", ~"(2)", ~"(3)",~"(4)",
+'Group Fixed-Effects', 'Yes',   'Yes', 'Yes', 'Yes', 
+'Year Fixed-Effects', 'Yes',   'Yes', 'Yes', 'Yes',  
+)
+attr(rows, 'position') <- c(12, 13)
+
+# HTML
+modelsummary::modelsummary(
+  models, 
+  shape       = term:event:statistic ~ model, 
+  coef_rename = rename_fn, # rename
+  #gof_omit    = "Adj|Within|IC|RMSE|FE..first_year", 
+  gof_map = c("nobs", "r.squared"),
+  stars = c('*' = .05, '**' = .01, '***' = .001),
+  #stars       = TRUE,
+  add_rows = rows,
+  title       = "Impacts of Brexit (ETWFE model, OLS)", 
+  notes       = ""
+) %>% 
+kableExtra::add_header_above(c(" " = 1, "(1)" = 1,  "(2)" = 1, "(3)" = 1,  
+                       "(4)" = 1)) %>% 
+kableExtra::add_header_above(c(" " = 1, "Exit probability" = 2,  "Ownership ratio" = 2)) %>%
+kableExtra::footnote(general = longnote, threeparttable = TRUE) 
+
+
+# Latex
+modelsummary::modelsummary(
+  models, 
+  shape       = term:event:statistic ~ model, 
+  coef_rename = rename_fn, # rename
+  #gof_omit    = "Adj|Within|IC|RMSE|FE..first_year", 
+  gof_map = c("nobs", "r.squared"),
+  stars = c('*' = .05, '**' = .01, '***' = .001),
+  #stars       = TRUE,
+  add_rows = rows,
+  title       = "Impacts of Brexit (ETWFE model, OLS)", 
+  notes       = "",
+  output = "latex"
+)  %>%
+kableExtra::add_header_above(c(" " = 1, "(1)" = 1,  "(2)" = 1, "(3)" = 1,  
+                       "(4)" = 1)) %>% 
+kableExtra::add_header_above(c(" " = 1, "Exit probability" = 2,  "Ownership ratio" = 2)) %>%
+kableExtra::footnote(general = longnote, threeparttable = TRUE) %>%
+kableExtra::save_kable("../Tables/Table1_ETWFE_OLS.tex")
+
+```
+
+
+\newpage
+
+# All OECD countries
+
+```{r Fig-TWFE-Exit-OLS-OECD, dpi = 300}
+
+fixestWorldExitOLS <- fixest::feols(exitit ~   i(year, GBR, 2014)
+                       | year + AffiliateCode, 
+               data = aff_oecd,
+               vcov = ~ country)
+
+fixest::iplot(fixestWorldExitOLS, pt.join = TRUE,
+      main = "Effect of Brexit on exit probability",
+      sub = "Affiliate-level balanced panel.",
+      xlab = "Linear probability model \
+      OECD countries excluding EU countries."
+      )
+```
+
+
+
+```{r ETWFE-Exit-OLS-OECD}
+
+etwfeWorldExitOLS <- etwfe::etwfe(exitit ~  1  ,
+               tvar = year, # time var
+               gvar = first_year, # group var
+               ivar =  year + AffiliateCode, # FEs
+               data = aff_oecd,
+               family = "gaussian",
+               vcov = ~country)
+etwfeWorldExitOLSME <- etwfe::emfx(etwfeWorldExitOLS, type = "event") 
+
+fixest::etable(etwfeWorldExitOLS)
+
+```
+
+
+# Sensitivity analysis
+
+- Using the method proposed by [Rambachan and Roth (2022)](https://jonathandroth.github.io/assets/files/HonestParallelTrends_Main.pdf), we conduct a sensitivity analysis to assess the robustness of the results to potential violations of the parallel trends assumption. The method is implemented in the `HonestDiD` package in R. 
+
+```
+remotes::install_github("asheshrambachan/HonestDiD")
+```
+
+
+## Store the TWFE results
+
+```{r TWFE-results}
+betahat <- summary(es6)$coefficients
+sigma <-   summary(es6)$cov.scaled
+
+# CI
+library(HonestDiD)
+originalResults <- HonestDiD::constructOriginalCS(
+  betahat = betahat, # TWFE
+  sigma = sigma, # TWFE
+  l_vec = basisVector(index = 5, size = 5),
+  numPrePeriods = 2, # pre-periods
+  numPostPeriods = 5 # post-periods
+)
+
+```
+
+
+
+## Relative magnitudes restriction
+
+
+```{r Sensitivity-Analysis, dpi = 300}
+library(HonestDiD)
+
+# Relative magnitudes
+delta_rm_results <-
+  HonestDiD::createSensitivityResults_relativeMagnitudes(
+    betahat = betahat, # TWFE
+    sigma = sigma, # TWFE
+    numPrePeriods = 2, # Pre-period
+    numPostPeriods = 5, # Post-period
+    Mbarvec = seq(0.5, 2, by = 0.5), # Mbar
+    l_vec = basisVector(index = 5, size = 5) # post 5
+  )
+
+delta_rm_results
+```
+
+## Plot
+
+```{r Fig-Relative-Magnitude, dpi = 300}
+
+# Rename labels
+delta_rm_results$method <- "Relative Magnitudes"
+
+# sensitivity plot
+s1 <- HonestDiD::createSensitivityPlot_relativeMagnitudes(delta_rm_results, originalResults)
+
+s1
+```
+
+## Smoothness bound
+
+
+```{r smoothness, cache=TRUE}
+
+# smoothness bound
+delta_sd_results <-
+  HonestDiD::createSensitivityResults(
+ betahat = betahat, # TWFE
+ sigma = sigma, # TWFE
+ numPrePeriods = 2, # pre-periods
+ numPostPeriods = 5, # post-periods
+ Mvec = seq(0.005, 0.010, by = 0.005), # M
+ l_vec = basisVector(index = 5, size = 5) # post 6
+  )
+```
+
+
+```{r Fig-smoothness-plot, dpi = 300}
+# Rename labels
+delta_sd_results$method <- "Smoothness bound"
+delta_sd_results
+
+# Plot
+s2 <- createSensitivityPlot(delta_sd_results, originalResults)
+
+s2
+```
+
+## Combine s1 and s2 graph
+
+```{r Fig-Sensitivity-Combined, dpi = 300}
+# Combine the two plots
+gridExtra::grid.arrange(s1, s2, ncol = 2)
+
+```
+
+
+
+# References {-}
+
+- [Create a publication-ready LaTeX regression table with `kableExtra` in R](https://tilburgsciencehub.com/topics/visualization/reporting-tables/reportingtables/kableextra/)
+
+- [modelsummary: regression tables](https://modelsummary.com/articles/modelsummary.html)
+
+- `fixest`
+  - [fixest: Exporting estimation tables](https://lrberge.github.io/fixest/articles/exporting_tables.html#exporting-multiple-estimations-to-latex)
+  - [Fast Fixed-Effects Estimation: Short Introduction](https://cran.r-project.org/web/packages/fixest/vignettes/fixest_walkthrough.html)
+
+- For OLS:
+  - [Fixed-effects OLS estimations](https://lrberge.github.io/fixest/reference/feols.html)
+
+- For Logit model:
+  - [Fixed-effects GLM estimations](https://lrberge.github.io/fixest/reference/feglm.html)
+  - [family: Family Objects for Models](https://rdrr.io/r/stats/family.html)
+  - [LOGIT REGRESSION | R DATA ANALYSIS EXAMPLES](https://stats.oarc.ucla.edu/r/dae/logit-regression/)
+
+- [HonestDiD](https://github.com/asheshrambachan/HonestDiD)
+
+

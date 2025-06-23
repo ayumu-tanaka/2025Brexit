@@ -1,0 +1,266 @@
+---
+title: "Brexit: SDiD, SC, DiD. New Entry"
+author: "Ayumu Tanaka"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+   # keep_md: true
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+
+```{r packages}
+# devtools::install_github("synth-inference/synthdid")
+library(synthdid)
+library(ggplot2)
+library(dplyr)
+
+set.seed(12345)
+```
+
+# Load the data
+
+
+```{r data}
+library(rio)
+Data <- rio::import("../Data_output/collapse_industry.dta")
+
+Data$FA_Sector <- Data$FA_SectorCode2009
+Data$FA_SectorCode2009 <- NULL
+
+# Keep years: 2010-2020
+DataA <- Data[Data$year >= 2010 & Data$year <= 2020, ]
+
+
+# Keep the EU countries
+DataA <- DataA[DataA$EU == 1, ]
+
+# Keep high-income EU countries
+EU_HI <- c("AUT", "BEL", "DNK", "FIN", "FRA", "DEU", "IRL", "ITA", "LUX", "NLD", "SWE", "GBR")
+DataA <- DataA[DataA$iso %in% EU_HI, ]
+
+# Make a pair ID for the pair of iso and FA_sector
+#DataA <- DataA %>%
+#  mutate(pair = group_indices(., iso, FA_Sector))
+
+```
+
+
+# Make the balanced panel
+
+```{r make-balanced-panel}
+
+library(plm)
+library(dplyr)
+library(tidyr)
+
+DataB <- DataA %>%
+  # All combinations of iso - FA_Sector - year
+  complete(iso, FA_Sector, year)
+
+# Pair ID of iso & FA_Sector
+DataB <- DataB %>%
+  mutate(pair = group_indices(., iso, FA_Sector))
+
+# Drop if iso==""
+DataB <- DataB %>%
+  filter(iso != "")
+# Drop if FA_Sector==0
+DataB <- DataB %>%
+  filter(FA_Sector != 0)
+
+# Make the balanced panel
+#DataB <- plm::make.pbalanced(DataA, balance.type = c("fill"), index = c("iso", "year"))
+
+# Replace NA with 0 for "N" column
+DataB$N[is.na(DataB$N)] <- 0
+
+```
+
+
+
+```{r prepare}
+
+# treated = 1 if iso == "GBR" and year >= 2016
+# treated = 0 if iso != "GBR" and year < 2016
+DataB$treated <- ifelse(DataB$iso == "GBR" & DataB$year >= 2016, 1, 0)
+
+DataB <- DataB[, c("iso", "year", 
+                              "N", "pair", "treated")]
+
+table(DataB$year, DataB$treated)
+
+# Convert to data frame
+DataB <- as.data.frame(DataB)
+
+# Arrange the data: country,  year, outcome, treated
+DataB <- DataB[, c("pair", "year", "N", "treated")]
+
+```
+
+
+
+# Synthetic DiD
+
+
+```{r sdid, message=FALSE,  warning=FALSE}
+
+# Set up the data for the Synthetic DiD analysis
+# panel.matrices to reshape the long data to wide data
+setup = synthdid::panel.matrices(DataB, 
+                                 unit =1, 
+                                 time = 2, 
+                                 outcome = 3, 
+                                 treatment =4)
+# synthdid_estimate to estimate the SDiD estimates
+## Y: matrix of observed values
+## N0: number of control group
+## T0: number of pretreatment periods
+estimateSDiD = synthdid::synthdid_estimate(setup$Y, setup$N0, setup$T0)
+estimateSDiD
+print(summary(estimateSDiD))
+
+# vcov: Compute the variance-covariance matrix of Fitted Model Object
+seSDiD = sqrt(vcov(estimateSDiD, method='placebo'))
+seSDiD
+
+
+```
+
+
+- `sprintf` is a wrapper for the C function sprintf, that returns a character vector containing a formatted combination of text and variable values.
+
+```{r label}
+# sprintf
+label1 <- sprintf('Point estimate = %1.3f', estimateSDiD)
+label2 <- sprintf('S.E.= %1.3f', seSDiD)
+label3 <- sprintf('95%% CI (%1.3f, %1.3f)', 
+                  estimateSDiD - 1.96 * seSDiD, 
+                  estimateSDiD + 1.96 * seSDiD)
+label4 <- summary( estimateSDiD)$dimensions
+label5 <- sprintf('N = %1.0f', label4["N0"]+ label4["N1"])
+
+label1
+label2
+label3
+```
+
+
+# Plot the treatement effects
+- parallel trends and control units
+
+```{r Fig6_SDiD, dpi = 300}
+plot(estimateSDiD, se.method='placebo')
+
+# brexit.sdid1 < plot(brexit.tau.hat, se.method='placebo', scale_x_continuous(breaks=seq(2010,2020,2)))
+g1 <- plot(estimateSDiD, se.method='placebo')
+# Delete the unnesassary x-axis labels
+g2 <- g1 + scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) + 
+  # add label1 & label2
+  annotate("text", x = 2016, y = 0.15, label = label1, size = 3) +
+  annotate("text", x = 2016, y = 0.10, label = label2, size = 3) +
+  annotate("text", x = 2016, y = 0.05, label = label3, size = 3) +
+  annotate("text", x = 2016, y = 0.00, label = label5, size = 3) 
+
+g2
+    
+# Save the plot
+ggsave("../EPS/Fig9-SDiD-Entry.eps", dpi = 300,
+       width=8, height=6)
+ggsave("../EPS/Fig9-SDiD-Entry.png", dpi = 300,
+       width=8, height=6)
+ggsave("../EPS/Fig9-SDiD-Entry.pdf", dpi = 300,
+       width=8, height=6)
+
+```
+
+## Weight
+
+- Weight of control units, $\omega_i$
+
+
+```{r weight, fig.width=7, fig.height=4}
+synthdid_units_plot(estimateSDiD, se.method='placebo')
+#ggsave("brexit.control.png")
+```
+
+
+## Check the parallel trends
+
+
+```{r fig_parallel_trends, dpi = 300}
+g3 <- plot(estimateSDiD, overlay=1,  se.method='placebo')
+# Delete the unnecessary x-axis labels
+g4 <- g3 + scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+g4
+#ggsave("brexit.parallel_trends.png")
+```
+
+
+# DiD and SDiD
+
+```{r}
+# Estimates
+estimateSC   = sc_estimate(setup$Y, setup$N0, setup$T0)
+estimateDiD  = did_estimate(setup$Y, setup$N0, setup$T0)
+
+# SE
+seSC = sqrt(vcov(estimateSC, method='placebo'))
+seDiD = sqrt(vcov(estimateDiD, method='placebo'))
+
+# CI
+CISC = sprintf('95%% CI (%1.3f, %1.3f)', 
+               estimateSC - 1.96 * seSC, 
+               estimateSC + 1.96 * seSC)
+CIDiD = sprintf('95%% CI (%1.3f, %1.3f)', 
+                estimateDiD - 1.96 * seDiD, 
+                estimateDiD + 1.96 * seDiD)
+CISDiD = sprintf('95%% CI (%1.3f, %1.3f)', 
+                  estimateSDiD - 1.96 * seSDiD, 
+                  estimateSDiD + 1.96 * seSDiD)
+
+# List of Estimates, SE, and CI. 3*3
+DataB.estimates = list(estimateDiD, estimateSC, estimateSDiD)
+DataB.se = list(seDiD, seSC, seSDiD)
+DataB.CI = list(CIDiD, CISC, CISDiD)
+
+# Name the results
+names(DataB.estimates) = c('DiD', 'SC', 'SDiD')
+names(DataB.se) = c('DiD', 'SC', 'SDiD')
+names(DataB.CI) = c('DiD', 'SC', 'SDiD')
+
+```
+
+
+```{r}
+# Print the results
+print(unlist(DataB.estimates))
+print(unlist(DataB.se))
+print(unlist(DataB.CI))
+
+```
+
+
+## Plot the DiD and SDiD results
+
+```{r fig_sdid_did_sc, dpi = 300}
+g5 <- synthdid_plot(DataB.estimates, se.method='placebo')
+g6 <- g5 + scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+g6
+#ggsave("brexit.sdid_did_sc.png")
+```
+
+
+
+
+

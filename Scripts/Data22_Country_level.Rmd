@@ -1,0 +1,169 @@
+---
+title: "Number of Affiliates"
+author: "Ayumu Tanaka"
+date: "2025-06-06"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: yes
+    keep_md: true
+#bibliography: ref.bib
+#link-citations: yes
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # do not show messages
+                      warning=FALSE) # do not show warnings
+
+```
+
+# Load the package
+
+```{r load-package}
+library(ggplot2)
+library(dplyr)
+```
+
+# Load the data
+
+```{r load-data-package}
+library(rio)
+FA6 = import("../Data_output/FA6.rds")
+
+# Keep years: 2010 to 2020
+FA6 <- subset(FA6, year >= 2010 & year <= 2020)
+
+names(FA6)[names(FA6)=="iso"] = "country"
+
+
+```
+
+
+
+
+# Collapse the data by country and year with `tidyverse`
+
+```{r collapse-data-tidyverse}
+N_Aff <- FA6 %>% 
+  group_by(year, country) %>% 
+  summarise(N = n(), 
+            EU = first(EU_all),
+            meanratio = mean(RatioAll, na.rm = TRUE),
+            WN = sum(RatioAll, na.rm = TRUE)
+            )
+```
+
+
+
+# Subsample of DEU and GBR
+
+```{r subsample}
+# Subsample of DEU and GBR
+  N_Aff_DEU <- filter(N_Aff, country %in% c("DEU", "GBR")) 
+# Subsample of year>=2010
+  N_Aff_DEU <- filter(N_Aff_DEU, year >= 2010)
+```
+
+
+
+# Make the collapsed data by GBR
+
+```{r collapse-data-GBR}
+# Make subsample of aff if EU_all == 1
+  aff_EU <- subset(FA6, FA6$EU_all == 1)
+# Subsample of year>=2010
+  aff_EU <- subset(aff_EU, aff_EU$year >= 2010)
+
+# Collapse the data by GBR and year
+N_Aff_EU <- aff_EU %>% 
+  group_by(year, GBR) %>% 
+  summarise(N = n(), 
+            GBR = first(GBR),
+            ncountry = n_distinct(country),
+            WN = sum(RatioAll, na.rm = TRUE))
+
+```
+
+# High-income EU countries
+
+- High-income EU countries are Luxembourg, Ireland, Denmark, Netherlands, Sweden, Austria, Germany, Finland, Belgium, France, United Kingdom, and Italy. The GDP per capita of these countries are as follows:
+- Luxembourg: $115,531 LUX
+- Ireland: $84,339 IRL
+- Denmark: $63,434 DNK
+- Netherlands: $62,515 NLD
+- Sweden: $59,738 SWE
+- Austria: $57,256 AUT
+- Germany: $55,682 DEU
+- Finland: $55,345 FIN
+- Belgium: $54,319 BEL 
+- France: $46,133 FRA
+- United Kingdom: $45,470 GBR
+- Italy: $40,594 ITA
+
+```{r high-income-EU}
+
+
+# Create high-income EU member variable
+aff_EU$highEU <- ifelse(aff_EU$country %in% c("AUT", "BEL", "DNK", "FIN", "FRA", "DEU", "IRL", "ITA", "LUX", "NLD", "SWE", "GBR"), 1, 0)
+
+# Create the subsample of high-income EU countries
+aff_EU_high <- subset(aff_EU, aff_EU$highEU == 1)
+
+
+# Collapse the data by GBR and year
+N_Aff_EU_high <- aff_EU_high %>% 
+  group_by(year, GBR) %>% 
+  summarise(N = n(), 
+            GBR = first(GBR),
+            ncountry = n_distinct(country),
+            WN = sum(RatioAll, na.rm = TRUE)
+            )
+
+```
+
+
+
+
+
+# Export the data
+- To avoid the conflict with `plotly`'s `export`, use `rio::export` instead of `export`.
+
+```{r save-data}
+library("rio")
+  rio::export(N_Aff, "../Data_output/N_Aff.rds")
+  rio::export(N_Aff_EU, "../Data_output/N_Aff_EU.rds")
+  rio::export(N_Aff_EU_high, "../Data_output/N_Aff_EU_high.rds")
+  rio::export(N_Aff_DEU, "../Data_output/N_Aff_DEU.rds")
+  rio::export(aff_EU, "../Data_output/aff_EU.rds")
+  rio::export(aff_EU_high, "../Data_output/aff_EU_high.rds")
+  
+  rio::export(N_Aff, "../Data_output/N_Aff.dta")
+```
+
+
+
+
+
+
+
+# Appendix: Collapse the data by country and year with `doBy` {-}
+
+
+```
+# collapse the data by country and year
+library(doBy)
+N_Aff1 = summaryBy(AffiliateCode + Ratio ~ year + country, 
+                  FUN = c(length, sum), data = aff)
+
+# Rename the columns
+names(N_Aff1)[names(N_Aff1)=="AffiliateCode.length"] = "N"
+names(N_Aff1)[names(N_Aff1)=="Ratio.sum"] = "WN"
+
+# Remove unnecessary columns "Ratio.length" and "AffiliateCode.sum"
+N_Aff1$AffiliateCode.sum <- NULL
+N_Aff1$Ratio.length <- NULL
+
+```

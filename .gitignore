@@ -1,10 +1,21 @@
+# Directory file
+.DS_Store
+
 # History files
 .Rhistory
 .Rapp.history
 
+# Data
+Data_raw/
+.rds
+.dta
+.zip
+
 # Session Data files
 .RData
 .RDataTmp
+.rdb
+.rdx
 
 # User-specific files
 .Ruserdata

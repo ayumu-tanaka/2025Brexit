@@ -1,0 +1,535 @@
+---
+title: "Brexit firms"
+author: "Ayumu Tanaka"
+date: "2024-05-30"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    #keep_md: true
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+
+# Parent-level
+## Load the data
+```{r}
+library(rio)
+parent_last = import("../Data_output/parent_last.rds")
+
+# The firms that have affiliates in the United Kingdom (GBR).
+GBR <- subset(parent_last, parent_last$iso=="GBR")
+
+```
+
+
+## Density function of ownership ratio
+```{r density-ratio}
+library(ggplot2)
+
+# Draw the density function of "Ratio" by "censored==1 and 0. Set transparency is 0.5.
+Figure_ratio <- ggplot(GBR, aes(x=Ratio)) + 
+  geom_density(data=subset(GBR, censored==0), 
+               aes(x=Ratio), fill="red", alpha=0.4) + 
+  geom_density(data=subset(GBR, censored==1), 
+               aes(x=Ratio), fill="blue", alpha=0.4) +
+    labs(caption = "Blue = firms surviving in the UK, Red = firms exiting from the UK",
+         x = "Japanese parent firms' ownership ratio") +
+  theme_minimal()
+
+Figure_ratio
+```
+
+## Density function of No. of affiliates 
+```{r density-aff}
+# Draw the density function of "N" by "censored==1 and 0. Set transparency is 0.4.
+Figure_N_Aff <- ggplot(GBR, aes(x=N_Aff)) + 
+  geom_density(data=subset(GBR, censored==0), 
+               aes(x=N_Aff), fill="red", alpha=0.4) + 
+  geom_density(data=subset(GBR, censored==1), 
+               aes(x=N_Aff), fill="blue", alpha=0.4) +
+    labs(caption = "Blue = firms surviving in the UK, Red = firms exiting from the UK",
+         x = "Number of affiliates") +
+  theme_minimal()
+
+Figure_N_Aff
+```
+
+## Collapse the data by iso and year
+
+```{r collapse-data}
+library(dplyr)
+
+# Make the year2 which is equal to year + 1 
+parent_last$year2 <- parent_last$year + 1
+
+# Replace the year2 with year if year <=2016
+parent_last$year2 <- ifelse(parent_last$year<=2016, 
+                            parent_last$year, parent_last$year2)
+
+# Replace the year2 with year if year == 2018 | year == 2020 
+parent_last$year2 <- ifelse(parent_last$year==2018 |
+                            parent_last$year==2020,
+                            parent_last$year,parent_last$year2)
+
+# Collapse the data by iso and year2
+collapse <- parent_last %>% 
+  group_by(iso, year2) %>% 
+  summarise(N = n(), 
+            WN = sum(Ratio))
+
+# Drop if year==2022
+collapse <- subset(collapse, year2!=2022)
+
+# Rename year2 as year, rename N as N_exit
+N_firm_exit <- collapse %>% 
+  rename(year = year2, N_exit = N)
+
+
+rio::export(N_firm_exit, "../Data_output/N_firm_exit.rds")
+
+```
+
+
+## Brexit firm
+
+```{r Brexit-firm-dummy}
+# Make the sample of Brexit==1
+Firm_UK <- subset(parent_last, iso=="GBR")
+# Make the sample of exit==1
+exit_firm <- subset(parent_last, censored==0)
+
+exit_firm_UK <- subset(exit_firm, iso=="GBR")
+# Make the sample of exit==1 & year >= 2016
+exit_firm2016 <- subset(parent_last, censored==0 & year>=2016)
+exit_firm2016_UK <- subset(exit_firm, iso=="GBR" & year>=2016)
+
+rio::export(exit_firm2016_UK, "../Data_output/exit_firm2016_UK.rds")
+
+```
+
+
+
+## Plot the sector of the firms exiting from the UK
+```{r fig_plot_sector, dpi = 200}
+
+# Collapse the data "exit_firm_UK" by Parent_SectorClassNameAlph
+exit_firm_UK_sector <- exit_firm2016_UK %>% 
+  group_by(Parent_SectorClassNameAlph) %>% 
+  summarise(N = n())
+
+# Sort the data by N
+exit_firm_UK_sector <- exit_firm_UK_sector %>% 
+  arrange(desc(N))
+
+# Create the rank of the sector based on N
+exit_firm_UK_sector$rank <- 1:nrow(exit_firm_UK_sector)
+
+# Total number of firms
+n_firm = nrow(exit_firm2016_UK)
+n_firm_cap = paste0("Total number = ", n_firm)
+
+# Plot the horizontal bar of N by Parent_SectorClassNameAlph
+## The order of the bar is based on rank
+## Add the value label on the top of the bar
+f1 <- ggplot(exit_firm_UK_sector, 
+       aes(x = reorder(Parent_SectorClassNameAlph, -rank), y = N)) +
+  geom_bar(stat = "identity", alpha = 0.4) +
+  geom_text(aes(label = N), hjust = 1.0, size = 2) +
+  labs(title = "Parent-level",
+      caption = n_firm_cap,
+       x = "Sector",
+       y = "Number of firms") +
+  theme_minimal() +
+  coord_flip()   # This flips the x and y axes to make it horizontal 
+
+f1
+```
+
+
+
+## Plot the number of firms exiting from the UK & other High-income EU countries
+
+High-income EU countries are Luxembourg, Ireland, Denmark, Netherlands, Sweden, Austria, Germany, Finland, Belgium, France, United Kingdom, and Italy. The GDP per capita of these countries are as follows:
+
+- Luxembourg: $115,531 LUX *
+- Ireland: $84,339 IRL *
+- Denmark: $63,434 DNK *
+- Netherlands: $62,515 NLD *
+- Sweden: $59,738 SWE *
+- Austria: $57,256 AUT *
+- Germany: $55,682 DEU *
+- Finland: $55,345 FIN *
+- Belgium: $54,319 BEL*
+- France: $46,133 FRA *
+- United Kingdom: $45,470 GBR *
+- Italy: $40,594 ITA *
+
+```{r fig_plot_exit-compare, dpi = 300}
+# Identify high-income EU countries
+EU_HI <- c("AUT", "BEL", "DNK", "FIN", "FRA", "DEU", "IRL", "ITA", "LUX", "NLD", "SWE", "GBR")
+# Create the EU dummy
+collapse$EU_HI <- ifelse(collapse$iso %in% EU_HI, 1, 0)
+# Keep the data of EU_HI
+collapse_EU_HI <- subset(collapse, EU_HI==1)
+# Create the GBR dummy
+collapse_EU_HI$GBR <- ifelse(collapse_EU_HI$iso=="GBR", 1, 0)
+# Collapse the data by year2 and GBR
+library(doBy)
+collapseNse <- doBy::summaryBy(N ~ year2 + GBR, FUN=c(mean,sd), data = collapse_EU_HI)
+# Replace N.sd = 0 if GBR==1
+collapseNse$N.sd[collapseNse$GBR==1] <- 0
+# Create the Group dummy
+collapseNse$Group <- ifelse(collapseNse$GBR==1, "GBR", "High-income EU countries")
+
+# Keep year2>=2010
+collapseNse <- subset(collapseNse, year2>=2010)
+
+# Plot the mean number of observation exiting by Group with 95% CI
+
+library(ggplot2)
+ggplot(data = subset(collapseNse, GBR==0), 
+                      aes(x = year2, y = N.mean, 
+                          color = Group)) +
+  geom_line(linetype = "dotted") +
+  geom_point() +
+  geom_ribbon(aes(ymin = N.mean - 1.96 * N.sd, 
+                  ymax = N.mean + 1.96 * N.sd, 
+                  fill = Group), alpha = 0.2,
+              linetype = "dotted") +
+  labs(title = "Number of exiting Japanese parent firms",
+       x = "Year",
+       y = "Number of exiting firms") +
+  theme_minimal() +
+  geom_line(data = subset(collapseNse, GBR==1), 
+            linetype = "solid",
+            colour = "black") +
+  geom_point(data = subset(collapseNse, GBR==1),
+             colour = "black") +
+  geom_text(data = subset(collapseNse, GBR==1),
+             aes(label = N.mean),
+                        nudge_y = 2,
+            #position = position_stack(vjust = 1.07),
+            colour =  "black") +
+  theme(legend.position = "none") +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  labs(caption = "Solid line: UK. Dotted line: High-income EU countries.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2016, y = 45, 
+           label = "Brexit referendum",
+           , colour = "blue") +
+  annotate("text", x = 2013, y = 40, 
+           label = "UK", colour = "black") + 
+  annotate("text", x = 2013, y = 0, 
+           label = "High-income EU countries",
+           colour = "red") +
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+```
+
+
+## Plot the number of firms exiting from the UK
+
+```{r fig_plot_exit, dpi = 300}
+library(ggplot2)
+
+# Create the subset of collapse if iso == "GBR"
+collapseGBR <- subset(collapse, iso=="GBR")
+
+# Plot the number of observation exiting from the UK
+Figure_exit <- ggplot(collapseGBR, aes(x = year2, y = N)) +
+  geom_bar(stat = "identity", alpha = 0.4) +
+  labs(title = "Number of Japanese parent firms exiting from the UK",
+       x = "Year",
+       y = "Number of firms") +
+  theme_minimal() 
+
+# Add the label of bar height over the bar
+Figure_exit <- Figure_exit + geom_text(aes(label = N), vjust = -0.3)
+  
+# Add the vertical line at year == 2016
+Figure_exit <- Figure_exit + geom_vline(xintercept = 2016, linetype = "dotted")
+
+# Add the text "Brexit referendum" at year == 2016
+Figure_exit <- Figure_exit + annotate("text", x = 2016, y = 70, label = "Brexit referendum")
+
+# Display the bar plot
+Figure_exit
+```
+
+# Affiliate-level
+## Load the data
+```{r}
+library(rio)
+aff_last = rio::import("../Data_output/aff_last.rds")
+```
+
+## Brexit affiliate
+
+```{r Brexit-aff-dummy}
+# Make the sample of Brexit==1
+aff_UK <- subset(aff_last, iso=="GBR")
+# Make the sample of exit==1
+exit_aff <- subset(aff_last, censored==0)
+exit_aff_UK <- subset(exit_aff, iso=="GBR")
+# Make the sample of exit==1 & year >= 2016
+exit_aff2016 <- subset(aff_last, censored==0 & year>=2016)
+exit_aff2016_UK <- subset(exit_aff, iso=="GBR" & year>=2016)
+
+rio::export(exit_aff2016_UK, "../Data_output/exit_aff2016_UK.rds")
+
+```
+
+## Plot the sector of the firms exiting from the UK
+```{r fig_plot_sector-aff, dpi = 200}
+library(tidyverse)
+# Collapse the data "exit_firm_UK" by Parent_SectorClassNameAlph
+exit_aff_UK_sector <- exit_aff2016_UK %>% 
+  group_by(FA_SectorClassNameAlph) %>% 
+  summarise(N = n())
+
+# Sort the data by N
+exit_aff_UK_sector <- exit_aff_UK_sector %>% 
+  arrange(desc(N))
+
+# Create the rank of the sector based on N
+exit_aff_UK_sector$rank <- 1:nrow(exit_aff_UK_sector)
+
+# Total number of affiliates
+n_aff = nrow(exit_aff2016_UK)
+n_aff_cap = paste0("Total number = ", n_aff)
+
+# Plot the horizontal bar of N by Parent_SectorClassNameAlph
+## The order of the bar is based on rank
+## Add the value label on the top of the bar
+a1 <- ggplot(exit_aff_UK_sector, 
+       aes(x = reorder(FA_SectorClassNameAlph, -rank), y = N)) +
+  geom_bar(stat = "identity", alpha = 0.4) +
+  geom_text(aes(label = N), hjust = 1.5,  size = 2) +
+  labs(title = "Affiliate-level",
+       caption = n_aff_cap,
+       x = "Sector",
+       y = "Number of affiliates") +
+  theme_minimal() +
+  coord_flip()   # This flips the x and y axes to make it horizontal 
+
+
+a1
+```
+
+## Collapse the data by iso and year
+
+```{r collapse-data-aff}
+library(dplyr)
+
+# Make the year2 which is equal to year + 1 
+aff_last$year2 <- aff_last$year + 1
+
+# Replace the year2 with year if year <=2016
+aff_last$year2 <- ifelse(aff_last$year<=2016, 
+                            aff_last$year, aff_last$year2)
+
+# Replace the year2 with year if year == 2018 | year == 2020 
+aff_last$year2 <- ifelse(aff_last$year==2018 |
+                            aff_last$year==2020,
+                            aff_last$year,aff_last$year2)
+
+# Collapse the data by iso and year2
+collapse_aff <- aff_last %>% 
+  group_by(iso, year2) %>% 
+  summarise(N = n(), 
+            WN = sum(Ratio/100))
+
+# Drop if year==2022
+collapse_aff <- subset(collapse_aff, year2!=2022)
+
+# Rename year2 as year, rename N as N_exit
+N_Aff_exit <- collapse_aff %>% 
+  rename(year = year2, N_exit = N)
+
+rio::export(N_Aff_exit, "../Data_output/N_Aff_exit.rds")
+```
+
+## Plot the number of firms exiting from the UK & other High-income EU countries
+
+High-income EU countries are Luxembourg, Ireland, Denmark, Netherlands, Sweden, Austria, Germany, Finland, Belgium, France, United Kingdom, and Italy. The GDP per capita of these countries are as follows:
+
+- Luxembourg: $115,531 LUX *
+- Ireland: $84,339 IRL *
+- Denmark: $63,434 DNK *
+- Netherlands: $62,515 NLD *
+- Sweden: $59,738 SWE *
+- Austria: $57,256 AUT *
+- Germany: $55,682 DEU *
+- Finland: $55,345 FIN *
+- Belgium: $54,319 BEL*
+- France: $46,133 FRA *
+- United Kingdom: $45,470 GBR *
+- Italy: $40,594 ITA *
+
+```{r Fig2a_plot_exit-compare-aff, dpi = 300}
+# Identify high-income EU countries
+EU_HI <- c("AUT", "BEL", "DNK", "FIN", "FRA", "DEU", "IRL", "ITA", "LUX", "NLD", "SWE", "GBR")
+# Create the EU dummy
+collapse_aff$EU_HI <- ifelse(collapse_aff$iso %in% EU_HI, 1, 0)
+# Keep the data of EU_HI
+collapse_aff_EU_HI <- subset(collapse_aff, EU_HI==1)
+# Create the GBR dummy
+collapse_aff_EU_HI$GBR <- ifelse(collapse_aff_EU_HI$iso=="GBR", 1, 0)
+# Collapse the data by year2 and GBR
+library(doBy)
+collapse_affNse <- doBy::summaryBy(N ~ year2 + GBR, FUN=c(mean,sd), data = collapse_aff_EU_HI)
+# Replace N.sd = 0 if GBR==1
+collapse_affNse$N.sd[collapse_affNse$GBR==1] <- 0
+# Create the Group dummy
+collapse_affNse$Group <- ifelse(collapse_affNse$GBR==1, "GBR", "High-income EU countries")
+
+# Keep year2>=2010
+collapse_affNse <- subset(collapse_affNse, year2>=2010)
+
+# Plot the mean number of observation exiting by Group with 95% CI
+
+library(ggplot2)
+ggplot(data = subset(collapse_affNse, GBR==0), 
+                      aes(x = year2, y = N.mean, 
+                          color = Group)) +
+  geom_line(linetype = "dotted") +
+  geom_point() +
+  geom_ribbon(aes(ymin = N.mean - 1.96 * N.sd, 
+                  ymax = N.mean + 1.96 * N.sd, 
+                  fill = Group), alpha = 0.2,
+              linetype = "dotted") +
+  labs(title = "Number of exiting Japanese affiliates",
+       x = "Year",
+       y = "Number of exiting affiliates") +
+  theme_minimal() +
+  geom_line(data = subset(collapse_affNse, GBR==1), 
+            linetype = "solid",
+            colour = "black") +
+  geom_point(data = subset(collapse_affNse, GBR==1),
+             colour = "black") +
+  geom_text(data = subset(collapse_affNse, GBR==1),
+             aes(label = N.mean),
+                        nudge_y = 7,
+            #position = position_stack(vjust = 1.07),
+            colour =  "black") +
+  theme(legend.position = "none") +
+  geom_vline(xintercept = 2016, linetype = "dotted") + # vertical line at 2016
+  labs(caption = "Solid line: UK. Dotted line: High-income EU countries.") +
+  theme(plot.caption = element_text(hjust = 0, size = 8)) +
+  annotate("text", x = 2016, y = 85, 
+           label = "Brexit referendum",
+           , colour = "blue") +
+  annotate("text", x = 2013, y = 80, 
+           label = "UK", colour = "black") + 
+  annotate("text", x = 2013, y = 0, 
+           label = "High-income EU countries",
+           colour = "red") +
+  scale_x_continuous(breaks = ~ axisTicks(., log = FALSE)) 
+
+
+# Save the figure as EPS
+ggsave("../EPS/Fig2a_plot_exit-compare-aff.eps", dpi = 300)
+
+
+```
+
+
+## Combine two figures
+```{r fig-n-exit, dpi = 300}
+library(gridExtra)
+# Combine two figures: a1 and f1
+grid.arrange(a1, f1, nrow = 1)
+
+```
+
+
+```{r}
+library(gridExtra)
+library(ggplot2)
+
+# Combine two figures: a1 and f1
+c1 <- arrangeGrob(a1, f1, nrow = 1)  # arrangeGrob
+
+# 保存
+ggsave("../EPS/FigX3-sector.png", c1, width = 10, height = 5, dpi = 300)
+
+```
+
+
+# Survival years of the firms exiting from the UK
+
+```{r fig-histgram-survival, dpi = 300}
+## Histgram of survival years: affiliate
+subtitle <- paste0("N =", nrow(exit_aff2016_UK))
+sya <- ggplot(exit_aff2016_UK, aes(x = survival_years)) +
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.4) +
+  labs(title = "Japanese affiliates exiting from the UK",
+       x = "Survival years",
+       y = "Number of affiliates",
+       subtitle = subtitle) +
+  theme_minimal()
+
+## Histgram of survival years: parent firm
+subtitle <- paste0("N =", nrow(exit_firm2016_UK))
+syp <- ggplot(exit_firm2016_UK, aes(x = survival_years)) +
+  geom_histogram(binwidth = 1, fill = "red", alpha = 0.4) +
+  labs(title = "Japanese parent firms exiting from the UK",
+       x = "Survival years",
+       y = "Number of firms",
+       subtitle = subtitle) +
+  theme_minimal()
+
+## Combine two figures
+grid.arrange(sya, syp, nrow = 2)
+
+
+```
+
+
+# Aff_size of the firms exiting from the UK
+
+```{r fig-aff-size, dpi = 300}
+
+## Drop NA obs
+exit_aff2016_UK2 <- subset(exit_aff2016_UK, !is.na(exit_aff2016_UK$Aff_size))
+
+# Subtitle
+subtitle <- paste0("N=", nrow(exit_aff2016_UK2), 
+                   " Mean=", round(mean(exit_aff2016_UK2$Aff_size), 1))
+
+## Replace 0 with 1
+exit_aff2016_UK2$Aff_size <- ifelse(exit_aff2016_UK2$Aff_size==0, 1, exit_aff2016_UK2$Aff_size)
+
+## Create a category variable: Aff_size: 0-10, 11-50, 50-100, 100+
+exit_aff2016_UK2$Aff_size_cat <- cut(exit_aff2016_UK2$Aff_size, 
+                               breaks = c(0, 10, 50, 100, 100000), 
+                               labels = c("0-10", "11-50", "51-100", "100+"))
+
+## Order Aff_size & Aff_size_cat 
+exit_aff2016_UK2 <- exit_aff2016_UK2 %>% 
+  select(Aff_size, Aff_size_cat, everything())
+
+## Barplot of Aff_size_cat: affiliate
+sizea2 <- ggplot(exit_aff2016_UK2, aes(x = Aff_size_cat)) +
+  geom_bar(fill = "blue", alpha = 0.4) +
+  labs(title = "Japanese affiliates exiting from the UK",
+       x = "Affiliate size (Number of employees)",
+       y = "Number of affiliates",
+       subtitle = subtitle) +
+  theme_minimal()
+
+sizea2
+
+ggsave("../EPS/FigX1-aff-size-aff.png", dpi = 300)
+
+
+```
+

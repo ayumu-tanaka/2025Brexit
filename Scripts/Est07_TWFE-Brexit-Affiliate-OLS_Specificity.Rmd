@@ -1,0 +1,172 @@
+---
+title: "TWFE-Brexit: Affiliate-Level OLS, Asset Specificity"
+author: "Ayumu Tanaka"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+  #  keep_md: true
+---
+
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # show R code
+                      cache = FALSE, # do not cache results
+                      message=FALSE, # show messages
+                      warning=FALSE) # show warnings
+
+```
+
+# Load the package
+
+```{r load-package}
+library(tidyverse)
+```
+
+
+# Load the data
+```{r data}
+
+
+aff_highEU <- rio::import("../Data_output/ESTaff_highEU.dta")
+
+# Keep years: 2010 to 2020
+#aff_eu <- aff_eu %>% filter(year >= 2010 & year <= 2020)
+aff_highEU <- aff_highEU %>% filter(year >= 2010 & year <= 2020)
+
+```
+
+
+
+
+
+
+
+
+# Combine the PPE.dta with aff_highEU.dta
+```{r combine-data}
+# Load the PPE data
+PPE <- rio::import("../Data_raw/PPE.dta")
+# Keep the necessary columns
+PPE$IndustryName <- NULL
+PPE$AllSIC <- NULL
+PPE$SICdescription <- NULL
+
+# Combine the two datasets: FASector = OJCIndustryCode
+aff_highEU <- aff_highEU %>%
+  left_join(PPE, by = c("FASector" = "OJCIndustryCode"))
+
+# Remove if PPE is NA
+aff_highEU <- aff_highEU %>%
+  filter(!is.na(aff_highEU$PPE))
+
+
+# Subsample of RecoveryRateHigh = 0 or 1
+RRLow <- subset(aff_highEU, RecoveryRateHigh == 0)
+RRHigh <- subset(aff_highEU, RecoveryRateHigh == 1)
+```
+
+
+
+# Event study-TWFE
+## Exit-OLS with `fixest`
+
+
+```{r Fig-TWFE-Exit-OLS, dpi = 300}
+
+library(fixest)
+
+
+es1 <- fixest::feols(exitit ~   i(year, GBR, 2014) 
+                       | year + AffiliateCode, 
+               data = RRHigh,
+               vcov = ~ country)
+
+
+es2 <- fixest::feols(exitit ~   i(year, GBR, 2014) 
+                       | year +  AffiliateCode, 
+               data = RRLow,
+               vcov = ~ country)
+
+fixest::etable(es1, es2)
+
+```
+
+
+# Plot the results
+
+```{r plot-TWFE-Exit-OLS-FDItype, dpi = 300}
+
+# labels
+es1_n = as.numeric(es1[["nobs"]])
+es2_n = as.numeric(es2[["nobs"]])
+legend1 <- paste("Low (N = ", es1_n, ")")
+legend2 <- paste("High (N =", es2_n, ")")
+
+# coef
+b <- es1[["coefficients"]]
+# decimal to 3
+b <- round(b, 3)
+# coef
+c <- es2[["coefficients"]]
+# decimal to 3
+c <- round(c, 3)
+
+postscript("../EPS/Fig8-AssetSpecificity.eps", horizontal = FALSE,
+           width = 8, height = 6)
+iplot(list(es1, es2), pt.join = TRUE,
+      main = "Effect of Brexit on exit probability",
+      sub = "Affiliate-level balanced panel",
+      xlab = "Linear probability model"
+      ) 
+legend("topleft", col = 1:2, pch = 9, cex = 1.0, lwd = 1, lty = 1:2,
+       legend = c(legend1, legend2),
+       title = "Asset Specificity") 
+# Add value labels 
+ text(2010, b[1]-0.015, b[1], cex = 0.7, col = 1)
+ text(2012, b[2]-0.015, b[2], cex = 0.7, col = 1)
+ text(2016, b[3]-0.015, b[3], cex = 0.7, col = 1)
+ text(2017, b[4]-0.015, b[4], cex = 0.7, col = 1)
+ text(2018, b[5]-0.015, b[5], cex = 0.7, col = 1)
+ text(2019, b[6]-0.015, b[6], cex = 0.7, col = 1)
+ text(2020, b[7]-0.015, b[7], cex = 0.7, col = 1)
+ text(2021, b[8]-0.015, b[8], cex = 0.7, col = 1)
+
+# Add value labels 
+ text(2010, c[1]-0.015, c[1], cex = 0.7, col = 2)
+ text(2012, c[2]-0.015, c[2], cex = 0.7, col = 2)
+ text(2016, c[3]-0.015, c[3], cex = 0.7, col = 2)
+ text(2017, c[4]-0.015, c[4], cex = 0.7, col = 2)
+ text(2018, c[5]-0.015, c[5], cex = 0.7, col = 2)
+ text(2019, c[6]-0.015, c[6], cex = 0.7, col = 2)
+ text(2020, c[7]-0.015, c[7], cex = 0.7, col = 2)
+ text(2021, c[8]-0.015, c[8], cex = 0.7, col = 2)
+
+ dev.off()
+
+```
+
+
+## Show the png file
+
+```{r, echo=FALSE, out.width = "100%"}
+#  install.packages("magick")
+library(magick)
+
+# EPS 800 DPI
+img <- image_read(path = "../EPS/Fig8-AssetSpecificity.eps", density = "800")
+
+# PNG
+image_write(img, path = "../EPS/Fig8-AssetSpecificity.png", format = "png")
+
+```
+
+
+![](../EPS/Fig8-AssetSpecificity.png){ width=100% }
+
+
+

@@ -1,0 +1,195 @@
+---
+title: "Import the Japanese FDI data: 東洋経済データの読み込み"
+author: "Ayumu Tanaka"
+date: "2024-05-18"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: yes
+#bibliography: ref.bib
+link-citations: yes
+---
+
+```{r setup-chunk, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, # Display codes
+                      cache = FALSE, # do not Cache the results
+                      message=FALSE, # Suppress messages
+                      warning=FALSE) # Suppress warnings
+
+```
+
+# Preparation
+
+
+```{r preparation}
+# Remove all data
+rm(list = ls())
+
+# Load the necessary libraries
+library("rio")           # For importing data 
+library("tidyverse")     # For data manipulation
+library("countrycode")   # For creating the country ISO codes
+library("Hmisc")         # For labeling the variables
+```
+
+
+
+
+# Load the data "SHJP", "JP", and "FA"
+
+- "SHJP": Japanese parent firms' ownership data
+- "JP": Japanese parent firms' financial data
+- "FA": Japanese affiliates' basic data
+
+以下のデータを読み込む。
+
+- "SHJP": 日本の親会社の出資比率データ
+- "JP": 日本の親会社の財務データ
+- "FA": 日本の海外子会社の基本データ
+
+```{r load-data}
+
+  # Japanese parent firms' ownership data
+  SHJP <- rio::import("../Data_raw/KSKSHJP.dta") 
+    # Create the year variable by subtracting 1 from the EditionYear    
+    SHJP$year =  SHJP$EditionYear-1
+    # Remove "EditionYear" column
+    SHJP$EditionYear = NULL
+    # Remove if KSJOwnRatio < 10
+    SHJP = SHJP[SHJP$KSJOwnRatio >= 10, ]
+    # order by KSKJPCode and year
+    SHJP = SHJP[order(SHJP$KSKJPCode, SHJP$year), ]
+    
+  # Japanese parent firms' financial data
+  JP <- rio::import("../Data_raw/KSKJP.dta")
+    # Create the year variable by subtracting 1 from the EditionYear   
+    JP$year =  JP$EditionYear-1 
+    # Remove "EditionYear" column
+    JP$EditionYear = NULL
+    JP = JP[order(JP$KSKJPCode, JP$year), ]
+
+    
+  # Japanese affiliates' basic data
+  FA <- rio::import("../Data_raw/KSKFA.dta")
+    # Create the year variable by subtracting 1 from the EditionYear
+    FA$year =  FA$EditionYear-1
+    # Remove "EditionYear" column
+    FA$EditionYear = NULL
+    # Order by KSFAffiliateCode and year
+    FA = FA[order(FA$KSFAffiliateCode, FA$year), ]
+    FA = FA[FA$KSFParentJPOwnRatio >= 10, ]
+    
+```
+
+
+# Variable Names
+
+## SHJP
+
+```{r check-variable-names1}
+names(SHJP)
+```
+
+## JP
+
+```{r check-variable-names2}
+names(JP)
+```
+
+## FA
+
+```{r check-variable-names3}
+names(FA)
+```
+
+
+# Data preparation of FA data
+
+必要な変数を残し、変数名を変更しておく。
+
+```{r}
+# Remove unnecessary columns
+FA <- FA %>% 
+   select(-c(KSFDistCode1990, KSFDistCode1995,KSFAffiliateNameAlph,KSFAddressAlph,
+             KSFAddress, KSFPhoneNumber, KSFDescription, KSFRepresentative,
+             KSFCapitalStockNumeric, KSFCapitalStockDigitString,
+             KSFCapitalStockCurrencySymbol, KSFDispatchedNumber, KSFStartDateType,
+             KSFFiscalPeriodDate, KSFRevenueNumeric, 
+             KSFRevenueDigitString, KSFRevenueCurrencySymbol, KSFRevenueUSD
+             ))
+ 
+
+
+# Remove "KSF" from the columns names
+   names(FA) <- gsub("KSF", "", names(FA))
+   
+# Add "Parent_" to the column names starting "Sector"
+  names(FA) <- gsub("^Sector", "FA_Sector", names(FA))
+```
+
+
+# Data preparation of SHJP data
+
+必要な変数を残し、変数名を変更しておく。
+
+
+```{r}
+# Remove "KSF" from the columns names
+      names(SHJP) <- gsub("KSK", "", names(SHJP))
+      names(SHJP) <- gsub("KSF", "", names(SHJP))
+      names(SHJP) <- gsub("KS", "", names(SHJP))
+```
+
+
+```{r filter-largest-owner-SHJP}
+# Sort the rows by AffiliateCode, year, and JOwnRatio
+SHJP <- SHJP %>%
+  arrange(AffiliateCode, year, desc(JOwnRatio))
+
+# Create the variable that show the ranking of JOwnRatio at AffiliateCode-year
+SHJP <- SHJP %>%
+  group_by(AffiliateCode, year) %>%
+  mutate(rank = rank(-JOwnRatio, ties.method = "min", na.last = "keep")) %>%
+  ungroup()
+```
+
+
+# Data preparation of JP data
+
+必要な変数を残し、変数名を変更しておく。
+
+```{r}
+
+# Remove "KSK" from the column names of JP
+  names(JP) <- gsub("KSK", "", names(JP))
+  
+# Add "Parent_" to the column names starting "Common"
+  names(JP) <- gsub("^Common", "Parent_", names(JP))
+
+# Add "Parent_" to the column names starting "Sector"
+  names(JP) <- gsub("^Sector", "Parent_Sector", names(JP))
+
+  
+  # Select the necessary columns from JP
+JP <- JP %>% 
+  select(JPCode, year, Parent_Name, Parent_NameAlphabet, 
+         Parent_SectorCode1990, Parent_SectorCode2000, Parent_SectorCode2009
+         )
+
+```
+
+
+
+# Export the data
+
+```{r export-data}
+# Export the data
+  rio::export(SHJP, "../Data_output/SHJP.rds")
+  rio::export(FA, "../Data_output/FA.rds")
+  rio::export(JP, "../Data_output/JP.rds")
+
+```
+
+
+
