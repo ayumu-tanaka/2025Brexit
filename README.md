@@ -6,9 +6,8 @@
 
 # Authors:
 - Michael Ryan (Western Michigan University)
-    - Email: michael.ryan@wmich.edu  
 - Ayumu Tanaka (Aoyama Gakuin University)
-  - Email: ayumu@aoyamagakuin.jp 
+
 
 
 # Codes
